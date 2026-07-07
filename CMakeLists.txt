@@ -11,6 +11,7 @@ set(ARCH       "none"    CACHE STRING "none | native | icelake-server")
 option(ENABLE_OMP "Enable OpenMP"          OFF)
 option(ENABLE_VIZ "Build viz target"       ON)
 option(ENABLE_INLINE "Allow inlining"      ON)
+option(ENABLE_LTO "Enable link-time / interprocedural optimization" ON)
 
 # ---------- common flags ----------
 add_compile_options(-Wall -Wextra -Wpedantic)
@@ -35,10 +36,20 @@ if(NOT ENABLE_INLINE)
   add_compile_options(-g -fno-inline)
 endif()
 
-if(ARCH STREQUAL "native")
-  add_compile_options(-march=native)
-elseif(ARCH STREQUAL "icelake-server")
-  add_compile_options(-march=icelake-server)
+if(ARCH STREQUAL "none")
+elseif(ARCH STREQUAL "native")
+  # Nix silently strips "-march=native" as impure; pass an explicit target
+  # (e.g. -DARCH=znver4) instead.
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    # AArch64 clang has no -march=native; the CPU is selected via -mcpu.
+    add_compile_options(-mcpu=native)
+  else()
+    add_compile_options(-march=native)
+  endif()
+elseif(ARCH MATCHES "^apple-")
+  add_compile_options(-mcpu=${ARCH})
+else()
+  add_compile_options(-march=${ARCH})
 endif()
 
 if(BUILD_MODE MATCHES "san")
@@ -49,6 +60,16 @@ if(BUILD_MODE MATCHES "san")
   add_link_options(-fsanitize=address -fsanitize=undefined)
 else()
   add_compile_options(-Werror)
+endif()
+
+if(ENABLE_LTO AND NOT BUILD_MODE MATCHES "debug" AND NOT BUILD_MODE MATCHES "san")
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_err LANGUAGES C CXX)
+  if(_ipo_ok)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+  else()
+    message(STATUS "LTO requested but not supported by toolchain (${_ipo_err}), skipping")
+  endif()
 endif()
 
 if(ENABLE_OMP)
@@ -77,7 +98,7 @@ add_subdirectory(submodules/Catch2   EXCLUDE_FROM_ALL)
 # ---------- solver library ----------
 add_library(solver_lib STATIC
   src/solvers/roe/Roe.cpp
-  src/solvers/fwave/FWave.cpp
+  src/util/OmpDefaults.cpp
   src/patches/WavePropagation1d/WavePropagation1d.cpp
   src/patches/WavePropagation2d/WavePropagation2d.cpp
   src/setups/dambreak/DamBreak1d.cpp

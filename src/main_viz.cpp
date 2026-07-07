@@ -4,6 +4,7 @@
 #include "displacement/WellsCoppersmith.h"
 #include "io/Slab2Reader.h"
 #include "util/CpuAffinity.h"
+#include "util/OmpDefaults.h"
 #include "visualization/Camera.h"
 #include "visualization/Gebco.h"
 #include "visualization/GlobeView.h"
@@ -591,17 +592,6 @@ static void triggerScenario(const tsunami_lab::visualization::Scenario& i_sc) {
 
 // ImGui panels
 
-static std::future<std::pair<float, float>> g_geocodeFuture;
-static bool g_geocodeRunning = false;
-static std::string g_geocodeError;
-
-static void zoomToLocation(float i_lon, float i_lat, float i_zoom = 25.0f) {
-  if (g_camera) {
-    // World Z = -lat (see vertex shader negation)
-    g_camera->setTarget(glm::vec3(i_lon, 0.0f, -i_lat));
-    g_camera->setDistance(i_zoom);
-  }
-}
 
 // Shared width of the two left-hand panels. Note the built-in ImGui font only
 // covers ASCII + Latin-1 — characters beyond that (arrows, dashes, ellipses)
@@ -628,48 +618,6 @@ static void drawGlobeUi(tsunami_lab::visualization::GlobeView& globeView) {
                      "WASD / Pfeiltasten:   Karte verschieben\n"
                      "Scrollrad:            Zoom");
   ImGui::Spacing();
-
-  ImGui::SeparatorText("Stadtsuche");
-  static char cityBuf[128] = {};
-  bool doSearch = false;
-  ImGui::SetNextItemWidth(200);
-  if (ImGui::InputText("##city", cityBuf, sizeof(cityBuf),
-                       ImGuiInputTextFlags_EnterReturnsTrue))
-    doSearch = true;
-  ImGui::SameLine();
-  if (g_geocodeRunning) {
-    ImGui::BeginDisabled();
-    ImGui::Button("...");
-    ImGui::EndDisabled();
-  } else {
-    if (ImGui::Button("Suchen"))
-      doSearch = true;
-  }
-
-  if (doSearch && !g_geocodeRunning && cityBuf[0] != '\0') {
-    g_geocodeError = "";
-    g_geocodeRunning = true;
-    std::string city = cityBuf;
-    g_geocodeFuture = std::async(std::launch::async, [city]() {
-      return tsunami_lab::visualization::GlobeView::geocodeCity(city);
-    });
-  }
-
-  // Poll async result
-  if (g_geocodeRunning && g_geocodeFuture.valid()) {
-    if (g_geocodeFuture.wait_for(std::chrono::seconds(0)) ==
-        std::future_status::ready) {
-      std::pair<float, float> l_res = g_geocodeFuture.get();
-      g_geocodeRunning = false;
-      if (std::abs(l_res.first) > 0.001f || std::abs(l_res.second) > 0.001f)
-        zoomToLocation(l_res.first, l_res.second, 20.0f);
-      else
-        g_geocodeError = "Stadt nicht gefunden.";
-    }
-  }
-
-  if (!g_geocodeError.empty())
-    ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g_geocodeError.c_str());
 
   ImGui::Spacing();
   ImGui::SeparatorText("Historische Szenarien");
@@ -1243,6 +1191,7 @@ static void pinGuiThreadFromEnv() {
 }
 
 int main() {
+  tsunami_lab::util::applySaneOmpScheduleDefault();
   pinGuiThreadFromEnv();
 
   // Resolve (and, on first run, download) the GEBCO grid before opening the

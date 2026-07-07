@@ -297,3 +297,59 @@ TEST_CASE("Test the derivation of the FWave net-updates.", "[FWaveUpdates]") {
   REQUIRE(l_netUpdatesR[0] == Approx(0));
   REQUIRE(l_netUpdatesR[1] == Approx(0));
 }
+
+TEST_CASE("Test the wet/dry combinations of FWave net-updates.",
+         "[FWaveDryWet]") {
+  float l_netUpdatesL[2] = {0};
+  float l_netUpdatesR[2] = {0};
+
+  // both sides fully dry (h = hu = 0) -> no update on either side
+  tsunami_lab::solvers::FWave::netUpdates(0, 0, 0, 0, 0, 0, l_netUpdatesL,
+                                          l_netUpdatesR);
+  REQUIRE(l_netUpdatesL[0] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesL[1] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesR[0] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesR[1] == Approx(0).margin(1e-6));
+
+  // both sides dry by tolerance only (0 < h <= c_dryTolerance), with nonzero
+  // bathymetry -> still no update on either side
+  tsunami_lab::solvers::FWave::netUpdates(0.005f, 0.008f, 0, 0, 1, 2,
+                                          l_netUpdatesL, l_netUpdatesR);
+  REQUIRE(l_netUpdatesL[0] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesL[1] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesR[0] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesR[1] == Approx(0).margin(1e-6));
+
+  // left side dry -> reflects the right side; left stays untouched
+  tsunami_lab::solvers::FWave::netUpdates(0, 5, 0, 3, 0, 0, l_netUpdatesL,
+                                          l_netUpdatesR);
+  REQUIRE(l_netUpdatesL[0] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesL[1] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesR[0] == Approx(3.0));
+  REQUIRE(l_netUpdatesR[1] == Approx(21.00712585));
+
+  // right side dry -> reflects the left side; right stays untouched
+  tsunami_lab::solvers::FWave::netUpdates(5, 0, -3, 0, 0, 0, l_netUpdatesL,
+                                          l_netUpdatesR);
+  REQUIRE(l_netUpdatesL[0] == Approx(3.0));
+  REQUIRE(l_netUpdatesL[1] == Approx(-21.00712585));
+  REQUIRE(l_netUpdatesR[0] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesR[1] == Approx(0).margin(1e-6));
+
+  // left side dry with a bathymetry step -> deltaXPsi is zeroed across the
+  // step (i_bL mirrored from i_bR), left stays untouched
+  tsunami_lab::solvers::FWave::netUpdates(0, 10, 0, -4, 2, 0.5f, l_netUpdatesL,
+                                          l_netUpdatesR);
+  REQUIRE(l_netUpdatesL[0] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesL[1] == Approx(0).margin(1e-6));
+  REQUIRE(l_netUpdatesR[0] == Approx(-4.0));
+  REQUIRE(l_netUpdatesR[1] == Approx(-39.61141586));
+
+  // just above the dry threshold on the left, comfortably wet on the right
+  tsunami_lab::solvers::FWave::netUpdates(0.0100001f, 5, 0.001f, 2, 0, 0,
+                                          l_netUpdatesL, l_netUpdatesR);
+  REQUIRE(l_netUpdatesL[0] == Approx(-11.36927700));
+  REQUIRE(l_netUpdatesL[1] == Approx(51.94869995));
+  REQUIRE(l_netUpdatesR[0] == Approx(13.36827660));
+  REQUIRE(l_netUpdatesR[1] == Approx(71.43383026));
+}

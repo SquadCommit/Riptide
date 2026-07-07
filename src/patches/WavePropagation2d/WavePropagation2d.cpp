@@ -8,6 +8,7 @@
 
 #include "WavePropagation2d.h"
 #include "../../solvers/fwave/FWave.h"
+#include <algorithm>
 #include <cmath>
 
 tsunami_lab::patches::WavePropagation2d::WavePropagation2d(t_idx i_nCells_x,
@@ -149,64 +150,104 @@ void tsunami_lab::patches::WavePropagation2d::timeStep(t_real i_scaling,
                                                        std::string) {
   t_idx l_size = (m_nCells_x + 2) * (m_nCells_y + 2);
 
-  t_real* l_hCur = m_h + m_step * l_size;
-  t_real* l_huCur = m_hu + m_step * l_size;
-  t_real* l_hvCur = m_hv + m_step * l_size;
+  // __restrict: cur/new point into disjoint halves of the double buffers,
+  // which the compiler can't prove on its own; without it the sweep loops
+  // don't auto-vectorize.
+  const t_real* __restrict l_hCur = m_h + m_step * l_size;
+  const t_real* __restrict l_huCur = m_hu + m_step * l_size;
+  const t_real* __restrict l_hvCur = m_hv + m_step * l_size;
 
   m_step = 1 - m_step;
 
-  t_real* l_hNew = m_h + m_step * l_size;
-  t_real* l_huNew = m_hu + m_step * l_size;
-  t_real* l_hvNew = m_hv + m_step * l_size;
+  t_real* __restrict l_hNew = m_h + m_step * l_size;
+  t_real* __restrict l_huNew = m_hu + m_step * l_size;
+  t_real* __restrict l_hvNew = m_hv + m_step * l_size;
+  const t_real* __restrict l_b = m_b;
+
+  t_idx l_stride = getStride();
+  t_idx l_nx = m_nCells_x;
+  t_idx l_ny = m_nCells_y;
 
   // One parallel region for all three phases to avoid repeated thread creation.
 #pragma omp parallel
   {
-#pragma omp for schedule(runtime)
-    for (t_idx l_i = 0; l_i < l_size; l_i++) {
-      l_hNew[l_i] = l_hCur[l_i];
-      l_huNew[l_i] = l_huCur[l_i];
-      l_hvNew[l_i] = l_hvCur[l_i];
-    }
+    // Per-thread edge buffers for the x-sweep: net updates are first stored
+    // per edge, then applied to the cells in a second loop. This removes the
+    // read-write overlap on cell ix+1 between consecutive edges, so both the
+    // edge loop and the apply loop auto-vectorize (the branch-free FWave
+    // kernel compiles to selects). R-going updates are stored shifted by +1,
+    // making the apply loop a plain elementwise sum with sentinel zeros at
+    // the ends.
+    std::vector<t_real> l_edgeBuf(4 * l_stride, 0);
+    t_real* __restrict l_eLh = l_edgeBuf.data();
+    t_real* __restrict l_eLhu = l_edgeBuf.data() + l_stride;
+    t_real* __restrict l_eRh = l_edgeBuf.data() + 2 * l_stride;
+    t_real* __restrict l_eRhu = l_edgeBuf.data() + 3 * l_stride;
 
-    // X-sweep: rows are independent, parallelise over l_iy.
+    // X-sweep fused with the copy: each row is written once (cur - updates)
+    // while cache-hot; ghost rows only need the copy. Rows are independent.
 #pragma omp for schedule(runtime)
-    for (t_idx l_iy = 1; l_iy <= m_nCells_y; l_iy++) {
-      for (t_idx l_ix = 0; l_ix <= m_nCells_x; l_ix++) {
-        t_idx l_idxL = getCoordinates(l_ix, l_iy);
-        t_idx l_idxR = getCoordinates(l_ix + 1, l_iy);
+    for (t_idx l_iy = 0; l_iy < l_ny + 2; l_iy++) {
+      t_idx l_row = l_iy * l_stride;
+
+      if (l_iy == 0 || l_iy > l_ny) { // ghost row: copy only
+        for (t_idx l_i = l_row; l_i < l_row + l_stride; l_i++) {
+          l_hNew[l_i] = l_hCur[l_i];
+          l_huNew[l_i] = l_huCur[l_i];
+          l_hvNew[l_i] = l_hvCur[l_i];
+        }
+        continue;
+      }
+
+      // edge loop: edge l_ix sits between cells l_ix and l_ix+1
+      for (t_idx l_ix = 0; l_ix <= l_nx; l_ix++) {
         t_real l_netUpdateL[2];
         t_real l_netUpdateR[2];
 
         solvers::FWave::netUpdates(
-            l_hCur[l_idxL], l_hCur[l_idxR], l_huCur[l_idxL], l_huCur[l_idxR],
-            m_b[l_idxL], m_b[l_idxR], l_netUpdateL, l_netUpdateR);
+            l_hCur[l_row + l_ix], l_hCur[l_row + l_ix + 1],
+            l_huCur[l_row + l_ix], l_huCur[l_row + l_ix + 1],
+            l_b[l_row + l_ix], l_b[l_row + l_ix + 1], l_netUpdateL,
+            l_netUpdateR);
 
-        l_hNew[l_idxL] -= i_scaling * l_netUpdateL[0];
-        l_huNew[l_idxL] -= i_scaling * l_netUpdateL[1];
-        l_hNew[l_idxR] -= i_scaling * l_netUpdateR[0];
-        l_huNew[l_idxR] -= i_scaling * l_netUpdateR[1];
+        l_eLh[l_ix] = l_netUpdateL[0];
+        l_eLhu[l_ix] = l_netUpdateL[1];
+        l_eRh[l_ix + 1] = l_netUpdateR[0];
+        l_eRhu[l_ix + 1] = l_netUpdateR[1];
+      }
+
+      // apply loop: cell l_ix takes the L-update of edge l_ix and the
+      // R-update of edge l_ix-1 (stored shifted at l_ix). l_eRh[0] and
+      // l_eLh[l_stride-1] stay zero from initialization.
+      for (t_idx l_ix = 0; l_ix < l_stride; l_ix++) {
+        l_hNew[l_row + l_ix] =
+            l_hCur[l_row + l_ix] - i_scaling * (l_eLh[l_ix] + l_eRh[l_ix]);
+        l_huNew[l_row + l_ix] =
+            l_huCur[l_row + l_ix] - i_scaling * (l_eLhu[l_ix] + l_eRhu[l_ix]);
+        l_hvNew[l_row + l_ix] = l_hvCur[l_row + l_ix];
       }
     }
     // Y-sweep: adjacent edges share cells, so use red-black (even/odd) row
     // splitting — edges of the same parity write disjoint cells and can run
     // in parallel; the implicit barrier between passes orders the shared
-    // writes.
+    // writes. Within one edge row there is no overlap between iterations,
+    // so the loop vectorizes directly (no buffers needed).
     auto l_processYRow = [&](t_idx l_iy) {
-      for (t_idx l_ix = 1; l_ix <= m_nCells_x; l_ix++) {
-        t_idx l_idxB = getCoordinates(l_ix, l_iy);
-        t_idx l_idxT = getCoordinates(l_ix, l_iy + 1);
+      t_idx l_rowB = l_iy * l_stride;
+      t_idx l_rowT = l_rowB + l_stride;
+      for (t_idx l_ix = 1; l_ix <= l_nx; l_ix++) {
         t_real l_netUpdateB[2];
         t_real l_netUpdateT[2];
 
         solvers::FWave::netUpdates(
-            l_hCur[l_idxB], l_hCur[l_idxT], l_hvCur[l_idxB], l_hvCur[l_idxT],
-            m_b[l_idxB], m_b[l_idxT], l_netUpdateB, l_netUpdateT);
+            l_hCur[l_rowB + l_ix], l_hCur[l_rowT + l_ix],
+            l_hvCur[l_rowB + l_ix], l_hvCur[l_rowT + l_ix], l_b[l_rowB + l_ix],
+            l_b[l_rowT + l_ix], l_netUpdateB, l_netUpdateT);
 
-        l_hNew[l_idxB] -= i_scaling * l_netUpdateB[0];
-        l_hvNew[l_idxB] -= i_scaling * l_netUpdateB[1];
-        l_hNew[l_idxT] -= i_scaling * l_netUpdateT[0];
-        l_hvNew[l_idxT] -= i_scaling * l_netUpdateT[1];
+        l_hNew[l_rowB + l_ix] -= i_scaling * l_netUpdateB[0];
+        l_hvNew[l_rowB + l_ix] -= i_scaling * l_netUpdateB[1];
+        l_hNew[l_rowT + l_ix] -= i_scaling * l_netUpdateT[0];
+        l_hvNew[l_rowT + l_ix] -= i_scaling * l_netUpdateT[1];
       }
     };
 
@@ -215,22 +256,34 @@ void tsunami_lab::patches::WavePropagation2d::timeStep(t_real i_scaling,
       l_processYRow(l_iy);
     }
 
+    // Black phase with fused clamp: after the odd edge l_iy is processed,
+    // rows l_iy and l_iy+1 have received all their updates (their other
+    // y-edges are even and were handled in the red phase). Clamp h >= 0 and
+    // reset any non-finite cell (NaN/Inf) to dry while the rows are still
+    // cache-hot, so a locally unstable cell can't keep infecting its
+    // neighbours via the stencil. This covers all interior rows; ghost rows
+    // are re-derived from clamped interior rows by setGhost*() before the
+    // next time step.
 #pragma omp for schedule(runtime)
     for (t_idx l_iy = 1; l_iy <= m_nCells_y; l_iy += 2) {
       l_processYRow(l_iy);
-    }
-    // clamp h >= 0 and reset any non-finite cell (NaN/Inf) to dry, so a
-    // locally unstable cell can't keep infecting its neighbours via the
-    // stencil and ghost cells.
-#pragma omp for schedule(runtime)
-    for (t_idx l_i = 0; l_i < l_size; l_i++) {
-      bool l_invalid = l_hNew[l_i] < 0 || !std::isfinite(l_hNew[l_i]) ||
-                       !std::isfinite(l_huNew[l_i]) ||
-                       !std::isfinite(l_hvNew[l_i]);
-      if (l_invalid) {
-        l_hNew[l_i] = 0;
-        l_huNew[l_i] = 0;
-        l_hvNew[l_i] = 0;
+
+      t_idx l_end = std::min((l_iy + 2) * l_stride, l_size);
+      for (t_idx l_i = l_iy * l_stride; l_i < l_end; l_i++) {
+        bool l_invalid = l_hNew[l_i] < 0 || !std::isfinite(l_hNew[l_i]) ||
+                         !std::isfinite(l_huNew[l_i]) ||
+                         !std::isfinite(l_hvNew[l_i]);
+        if (l_invalid) {
+          l_hNew[l_i] = 0;
+        }
+        // Flush momentum in dry cells (h <= c_dryTolerance): the solver
+        // masks their updates, so leftover momentum would stay frozen
+        // forever — it poisons CFL estimates (u = hu/h with tiny h) and
+        // would re-enter the dynamics unchanged if the cell rewets.
+        if (l_invalid || l_hNew[l_i] <= c_dryTolerance) {
+          l_huNew[l_i] = 0;
+          l_hvNew[l_i] = 0;
+        }
       }
     }
   } // end parallel

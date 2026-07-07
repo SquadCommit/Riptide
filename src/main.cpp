@@ -22,6 +22,7 @@
 #include "setups/supercritical1d/SuperCritical1d.h"
 #include "setups/tsunamievent1d/TsunamiEvent1d.h"
 #include "setups/tsunamievent2d/TsunamiEvent2d.h"
+#include "util/OmpDefaults.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -124,6 +125,8 @@ static void printUsage(const char* i_prog) {
 }
 
 int main(int i_argc, char* i_argv[]) {
+  tsunami_lab::util::applySaneOmpScheduleDefault();
+
   // graceful CTRL-C handling: ask the time loop to stop so destructors run
   // (in particular nc_close finalizes the NetCDF/HDF5 checkpoint file).
   std::signal(SIGINT, onSigint);

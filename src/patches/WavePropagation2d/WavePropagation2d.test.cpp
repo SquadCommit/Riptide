@@ -197,3 +197,40 @@ TEST_CASE("2D reflecting boundary conditions mirror the adjacent cell.",
             Approx(5));
   }
 }
+TEST_CASE("2D time step flushes momentum in nearly-dry cells.",
+          "[WaveProp2dDryFlush]") {
+  /*
+   * A cell whose height is at or below c_dryTolerance gets no updates from
+   * the (masked) FWave solver, so leftover momentum would stay frozen
+   * forever. That frozen momentum poisons CFL estimates (u = hu/h with a
+   * tiny h) and would re-enter the dynamics unchanged if the cell rewets.
+   * The clamp phase must therefore zero hu/hv wherever h <= c_dryTolerance.
+   */
+  tsunami_lab::patches::WavePropagation2d l_waveProp(16, 16);
+  tsunami_lab::t_idx l_stride = l_waveProp.getStride();
+
+  // still lake, 5 m deep
+  for (tsunami_lab::t_idx l_iy = 0; l_iy < 16; l_iy++) {
+    for (tsunami_lab::t_idx l_ix = 0; l_ix < 16; l_ix++) {
+      l_waveProp.setBathymetry(l_ix, l_iy, -5.0f);
+      l_waveProp.setHeight(l_ix, l_iy, 5.0f);
+      l_waveProp.setMomentumX(l_ix, l_iy, 0.0f);
+      l_waveProp.setMomentumY(l_ix, l_iy, 0.0f);
+    }
+  }
+
+  // nearly-dry cell with stale momentum (drying coastal cell)
+  l_waveProp.setBathymetry(7, 7, 0.0f);
+  l_waveProp.setHeight(7, 7, 0.005f); // <= c_dryTolerance = 0.01
+  l_waveProp.setMomentumX(7, 7, 3.0f);
+  l_waveProp.setMomentumY(7, 7, -2.0f);
+
+  l_waveProp.setGhostOutflow();
+  l_waveProp.timeStep(0.001f, "FWAVE");
+
+  const tsunami_lab::t_idx l_i = 7 + 7 * l_stride;
+  REQUIRE(l_waveProp.getMomentumX()[l_i] == 0.0f);
+  REQUIRE(l_waveProp.getMomentumY()[l_i] == 0.0f);
+  // the dry cell's height is untouched (no updates, no artificial wetting)
+  REQUIRE(l_waveProp.getHeight()[l_i] == Approx(0.005f));
+}

@@ -8,7 +8,6 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <string>
-#include <utility>
 
 namespace tsunami_lab {
 namespace io {
@@ -65,9 +64,6 @@ public:
   // the MSAA fill cost into unusable frame rates.
   float lodCamDistance = 300.0f;
   int lodViewportPx = 720;
-
-  // Returns (lon, lat) in degrees, or (0,0) on failure.
-  static std::pair<float, float> geocodeCity(const std::string& i_city);
 
   ~GlobeView();
 

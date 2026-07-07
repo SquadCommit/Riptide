@@ -121,6 +121,10 @@ if [[ ${#omp_cores[@]} -gt 0 ]]; then
   export OMP_PROC_BIND="close"
   export OMP_PLACES="${places%,}"
 fi
+# Unset OMP_SCHEDULE falls back to an unchunked dynamic schedule (~37x
+# slower here than static, see OmpDefaults.h); only default it, don't
+# override an explicit choice.
+export OMP_SCHEDULE="${OMP_SCHEDULE:-static}"
 
 if [[ $# -gt 0 ]]; then
   exec "$@"
