@@ -454,43 +454,5 @@ void GlobeView::setSelection(const BBox& i_bbox) {
   uploadSelectionRect();
 }
 
-std::pair<float, float> GlobeView::geocodeCity(const std::string& i_city) {
-  // Basic URL encode: replace spaces with +
-  std::string query = i_city;
-  for (char& c : query)
-    if (c == ' ')
-      c = '+';
-
-  std::string cmd = "curl -s --max-time 5 "
-                    "'https://nominatim.openstreetmap.org/search?q=" +
-                    query + "&format=json&limit=1' 2>/dev/null";
-
-  FILE* pipe = popen(cmd.c_str(), "r");
-  if (!pipe)
-    return {0.0f, 0.0f};
-
-  char buf[4096] = {};
-  size_t l_nRead = std::fread(buf, 1, sizeof(buf) - 1, pipe);
-  (void)l_nRead;
-  pclose(pipe);
-
-  auto extractField = [&](const char* key) -> float {
-    std::string search = std::string("\"") + key + "\":\"";
-    const char* p = std::strstr(buf, search.c_str());
-    if (!p)
-      return 0.0f;
-    p += search.size();
-    try {
-      return std::stof(p);
-    } catch (...) {
-      return 0.0f;
-    }
-  };
-
-  float lat = extractField("lat");
-  float lon = extractField("lon");
-  return {lon, lat};
-}
-
 } // namespace visualization
 } // namespace tsunami_lab
