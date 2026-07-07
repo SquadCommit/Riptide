@@ -127,3 +127,44 @@ TEST_CASE("SolverThread advances a still lake with a bump and publishes it.",
   const t_real l_centre = l_h[24 + 24 * l_n];
   REQUIRE(l_centre != Approx(l_depth + 5.0f));
 }
+
+TEST_CASE("CFL scaling ignores nearly-dry cells with stale momentum.",
+          "[SolverThread][DryCFL]") {
+  /*
+   * Regression test: a drying coastal cell (h <= c_dryTolerance) with
+   * leftover momentum used to enter maxWaveSpeed() via u = hu/h with a tiny
+   * h, collapsing dt (and with it the visualization's time-scale factor) for
+   * the rest of the run. Dry cells carry no waves and must not dictate the
+   * time step.
+   */
+  constexpr t_idx l_n = 20;
+  constexpr t_real l_dxy = 1000.0f;
+  constexpr t_real l_depth = 100.0f;
+
+  visualization::SimBuffer l_buf(l_n, l_n);
+  visualization::SolverThread l_sim(l_buf, l_n, l_n, l_dxy);
+
+  auto& l_solver = l_sim.solver();
+  for (t_idx l_y = 0; l_y < l_n; l_y++) {
+    for (t_idx l_x = 0; l_x < l_n; l_x++) {
+      l_solver.setBathymetry(l_x, l_y, -l_depth);
+      l_solver.setHeight(l_x, l_y, l_depth);
+      l_solver.setMomentumX(l_x, l_y, 0.0f);
+      l_solver.setMomentumY(l_x, l_y, 0.0f);
+    }
+  }
+  // nearly-dry cell with stale momentum: u = 1 / 0.001 = 1000 m/s if counted
+  l_solver.setBathymetry(10, 10, 0.0f);
+  l_solver.setHeight(10, 10, 0.001f);
+  l_solver.setMomentumX(10, 10, 1.0f);
+
+  l_sim.start();
+  const t_real l_scaling = l_sim.scaling();
+  l_sim.stop();
+
+  // wet-lake wave speed: sqrt(g * 100) ~ 31.3 m/s -> scaling ~ 0.45 / 31.3.
+  // If the dry cell were counted (speed ~ 1000 m/s), scaling would be ~30x
+  // smaller.
+  REQUIRE(l_scaling > 0.45f / 40.0f);
+  REQUIRE(l_scaling <= 0.45f / 31.0f);
+}

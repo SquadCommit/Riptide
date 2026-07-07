@@ -139,10 +139,42 @@ existing ``OMP_*`` variables. Wrapping the whole process in ``taskset``
 instead is *not* equivalent — it would also confine the OpenMP threads to
 the same restricted set and remove the separation.
 
+Solver Vectorization & Dry-Cell CFL Fix
+----------------------------------------
+
+Follow-up performance work on ``WavePropagation2d`` / ``FWave`` (measured on
+an Apple M4, ``DamBreak2d`` with 1000x1000 cells):
+
+- ``FWave::netUpdates`` rewritten branch-free (wet/dry handling and wave
+  accumulation via selects, same semantics incl. NaN cases) and force-inlined.
+- X-sweep decoupled through per-thread edge buffers: net updates are stored
+  per edge, then applied in a second elementwise loop. This removes the
+  read-write overlap on cell ``ix+1`` between consecutive edges — together
+  with ``__restrict`` pointers all sweep loops now auto-vectorize (NEON,
+  verified with ``-Rpass=loop-vectorize``).
+- Memory passes fused: the copy pass now lives inside the X-sweep, the
+  NaN/negativity clamp inside the black Y-phase (5 grid passes → 3).
+- ``OMP_SCHEDULE`` fallback is now platform-dependent: ``guided`` on Apple
+  Silicon (with ``static`` the slowest E-core gates every barrier; guided
+  lets E-cores contribute), ``static`` elsewhere (NUMA first-touch).
+
+Result: 10.9 → 5.0 ns per cell and iteration single-threaded, 3.6 → 1.15 ns
+with 10 threads (~3x).
+
+Separately, the visualization's time-scale factor collapsed (x90 → x7) once
+the wave reached a coast: drying cells (``0 < h <= c_dryTolerance``) keep
+their leftover momentum frozen (the solver masks their updates), and
+``SolverThread::maxWaveSpeed()`` counted them via ``u = hu/h`` with a tiny
+``h``, shrinking dt for the rest of the run. Fixed twofold: ``maxWaveSpeed``
+skips cells the solver treats as dry, and the clamp phase of ``timeStep``
+flushes ``hu``/``hv`` in dry cells. Regression tests:
+``[WaveProp2dDryFlush]``, ``[DryCFL]``.
+
 Individual Contributions
 -------------------------
 
 - **Yannik Köllmann:** ``tsunami_lab::util::pinThreadToCore()`` GUI-thread
-  pinning via ``TSUNAMI_VIZ_CORE``; wrote this chapter.
+  pinning via ``TSUNAMI_VIZ_CORE``; branchless/vectorized FWave kernel, fused
+  sweep passes and dry-cell CFL fix (see above); wrote this chapter.
 - **Jan Vogt:**
 - **Mika Brückner:**
