@@ -13,16 +13,40 @@ using tsunami_lab::displacement::OkadaDisplacement;
 
 TEST_CASE("OkadaDisplacement: along-strike symmetry of a thrust fault",
           "[OkadaDispl]") {
-  // strike=0 -> along-strike axis is east; a pure dip-slip (thrust) source is
-  // symmetric under reflection of the along-strike coordinate.
+  // strike=0 (geographic, clockwise from North) -> along-strike axis is
+  // north; a pure dip-slip (thrust) source is symmetric under reflection of
+  // the along-strike coordinate.
   OkadaDisplacement l_model(0.0, 30.0, 90.0, 5.0, 10000.0, 5000.0, 2000.0);
 
-  REQUIRE(l_model.verticalDisplacement(3000.0, 1000.0) ==
-          Approx(l_model.verticalDisplacement(-3000.0, 1000.0)));
-  REQUIRE(l_model.verticalDisplacement(7000.0, -4000.0) ==
-          Approx(l_model.verticalDisplacement(-7000.0, -4000.0)));
-  REQUIRE(l_model.verticalDisplacement(500.0, 0.0) ==
-          Approx(l_model.verticalDisplacement(-500.0, 0.0)));
+  REQUIRE(l_model.verticalDisplacement(1000.0, 3000.0) ==
+          Approx(l_model.verticalDisplacement(1000.0, -3000.0)));
+  REQUIRE(l_model.verticalDisplacement(-4000.0, 7000.0) ==
+          Approx(l_model.verticalDisplacement(-4000.0, -7000.0)));
+  REQUIRE(l_model.verticalDisplacement(0.0, 500.0) ==
+          Approx(l_model.verticalDisplacement(0.0, -500.0)));
+}
+
+TEST_CASE("OkadaDisplacement: strike rotates the fault footprint",
+          "[OkadaDispl]") {
+  // An elongated fault (L >> W) concentrates its displacement along strike.
+  // With strike=0 the rupture runs north: a point far north of the centroid
+  // (still over the fault) must see far more displacement than a point the
+  // same distance east of it (off the fault's side). Strike=90 (fault runs
+  // east) swaps the two.
+  const double l_L = 100000.0, l_W = 10000.0;
+  OkadaDisplacement l_north(0.0, 30.0, 90.0, 5.0, l_L, l_W, 5000.0);
+  OkadaDisplacement l_east(90.0, 30.0, 90.0, 5.0, l_L, l_W, 5000.0);
+
+  const double l_r = 30000.0; // inside L/2, well outside W
+  REQUIRE(std::abs(l_north.verticalDisplacement(0.0, l_r)) >
+          std::abs(l_north.verticalDisplacement(l_r, 0.0)));
+  REQUIRE(std::abs(l_east.verticalDisplacement(l_r, 0.0)) >
+          std::abs(l_east.verticalDisplacement(0.0, l_r)));
+
+  // Rotating the query with the strike must reproduce the strike=0 field:
+  // both points sit at the same along-strike offset on the fault trace.
+  REQUIRE(l_east.verticalDisplacement(l_r, 0.0) ==
+          Approx(l_north.verticalDisplacement(0.0, l_r)));
 }
 
 TEST_CASE("OkadaDisplacement: negligible displacement in the far field",
@@ -47,9 +71,12 @@ TEST_CASE("OkadaDisplacement: deep compact fault is approximately Gaussian",
   // A small fault buried deep produces a smooth bell-shaped uplift footprint.
   OkadaDisplacement l_model(0.0, 45.0, 90.0, 1.0, 1000.0, 1000.0, 20000.0);
 
+  // Sample along strike (north for strike=0), where the dip-slip field is
+  // symmetric and bell-shaped; the cross-strike profile has uplift/subsidence
+  // lobes and is not Gaussian-like.
   const double l_sigma = 10000.0;
   double l_peak = l_model.verticalDisplacement(0.0, 0.0);
-  double l_atSigma = l_model.verticalDisplacement(l_sigma, 0.0);
+  double l_atSigma = l_model.verticalDisplacement(0.0, l_sigma);
 
   REQUIRE(l_peak > 0.0);
 
@@ -60,9 +87,9 @@ TEST_CASE("OkadaDisplacement: deep compact fault is approximately Gaussian",
 
   // Monotone falloff away from the centre.
   REQUIRE(l_model.verticalDisplacement(0.0, 0.0) >
-          l_model.verticalDisplacement(5000.0, 0.0));
-  REQUIRE(l_model.verticalDisplacement(5000.0, 0.0) >
-          l_model.verticalDisplacement(15000.0, 0.0));
+          l_model.verticalDisplacement(0.0, 5000.0));
+  REQUIRE(l_model.verticalDisplacement(0.0, 5000.0) >
+          l_model.verticalDisplacement(0.0, 15000.0));
 }
 
 TEST_CASE("OkadaDisplacement: finite for shallow near-vertical faults",

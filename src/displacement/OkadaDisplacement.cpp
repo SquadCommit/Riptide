@@ -108,9 +108,11 @@ double OkadaDisplacement::verticalDisplacement(double i_east,
   };
 
   // Rotate the (+east, +north) query into the fault-local frame where +x runs
-  // along strike (clockwise from North).
-  double l_x = i_east * m_cosStrike + i_north * m_sinStrike;
-  double l_y = -i_east * m_sinStrike + i_north * m_cosStrike;
+  // along strike. Strike is geographic (clockwise from North, 0 = fault runs
+  // north), so the along-strike unit vector is (sin, cos) in (east, north) —
+  // the same mapping as the okada85.m reference implementation.
+  double l_x = i_east * m_sinStrike + i_north * m_cosStrike;
+  double l_y = -i_east * m_cosStrike + i_north * m_sinStrike;
 
   // Okada reference coordinates relative to the fault corner.
   double l_xo = l_x + m_length / 2.0;

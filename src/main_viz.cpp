@@ -1,5 +1,6 @@
 #include "displacement/OkadaDisplacement.h"
 #include "displacement/OkadaFactory.h"
+#include "displacement/SubductionScaling.h"
 #include "displacement/WellsCoppersmith.h"
 #include "io/Slab2Reader.h"
 #include "util/CpuAffinity.h"
@@ -8,6 +9,7 @@
 #include "visualization/Gebco.h"
 #include "visualization/GlobeView.h"
 #include "visualization/RegionView.h"
+#include "visualization/Scenario.h"
 #include "visualization/SimBuffer.h"
 #include "visualization/SolverThread.h"
 #include "visualization/Ui.h"
@@ -532,6 +534,62 @@ static void setCameraRegionView(tsunami_lab::visualization::Camera& cam) {
   cam.setDistance(330.0f);
 }
 
+// Reads the GEBCO bathymetry for i_sel and switches to the region-preview
+// state. Shared by the manual "Bathymetrie laden" button and scenario
+// presets. Sets g_regionError and returns false on failure.
+static bool
+loadRegionAndEnterPreview(const tsunami_lab::visualization::BBox& i_sel) {
+  g_regionError.clear();
+  if (g_gebcoPath.empty()) {
+    g_regionError = "Keine GEBCO-Daten verfügbar.";
+    return false;
+  }
+  tsunami_lab::visualization::gebco::Region l_reg;
+  if (!tsunami_lab::visualization::gebco::readRegion(g_gebcoPath, i_sel, l_reg,
+                                                     g_bathMaxDim) ||
+      !g_regionView || !g_regionView->load(l_reg)) {
+    g_regionError = "Laden der Bathymetrie fehlgeschlagen.";
+    return false;
+  }
+  g_loadedSel = i_sel;
+  g_state = AppState::REGION_PREVIEW;
+  if (g_slab2)
+    g_regionView->buildSlab2Overlay(*g_slab2);
+  if (g_camera)
+    setCameraRegionView(*g_camera);
+  return true;
+}
+
+// One-click historical scenario: loads its region, then places its fixed
+// epicentre and launches the displacement build for its magnitude — the same
+// steps a manual region-load + terrain click would trigger. Simulation start
+// is still left to the user (via the "Simulieren" button), so the resulting
+// fault/magnitude stays inspectable before committing.
+static void triggerScenario(const tsunami_lab::visualization::Scenario& i_sc) {
+  if (g_dispComputing || !g_regionView)
+    return;
+  if (g_globeView)
+    g_globeView->setSelection(i_sc.region);
+  if (!loadRegionAndEnterPreview(i_sc.region))
+    return;
+
+  g_mw = i_sc.magnitude;
+  g_epiLon = i_sc.epiLon;
+  g_epiLat = i_sc.epiLat;
+  g_regionView->lonLatToWorld(g_epiLon, g_epiLat, g_epiWorldX, g_epiWorldZ);
+
+  if (g_slab2)
+    g_slabPt = g_slab2->query(g_epiLon, g_epiLat);
+  else
+    g_slabPt = {k_fallbackDepth, k_fallbackStrike, k_fallbackDip, true,
+                nullptr};
+  g_hasClick = true;
+
+  g_displModel.reset();
+  g_regionView->clearDisplacement();
+  startDisplacementJob();
+}
+
 // ImGui panels
 
 static std::future<std::pair<float, float>> g_geocodeFuture;
@@ -615,6 +673,16 @@ static void drawGlobeUi(tsunami_lab::visualization::GlobeView& globeView) {
     ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g_geocodeError.c_str());
 
   ImGui::Spacing();
+  ImGui::SeparatorText("Historische Szenarien");
+  for (int l_i = 0; l_i < tsunami_lab::visualization::k_numScenarios; l_i++) {
+    ImGui::PushID(l_i);
+    if (ImGui::Button(tsunami_lab::visualization::k_scenarios[l_i].name,
+                      ImVec2(-1, 0)))
+      triggerScenario(tsunami_lab::visualization::k_scenarios[l_i]);
+    ImGui::PopID();
+  }
+
+  ImGui::Spacing();
   ImGui::SeparatorText("Einstellungen");
   ImGui::SliderFloat("Max. Ausdehnung (°)", &globeView.maxSelDeg, 2.0f, 500.0f);
 
@@ -685,26 +753,8 @@ static void drawGlobeUi(tsunami_lab::visualization::GlobeView& globeView) {
 
       ImGui::Spacing();
       ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.65f, 0.2f, 1));
-      if (ImGui::Button("Bathymetrie laden  >>", ImVec2(-1, 0))) {
-        g_regionError.clear();
-        if (g_gebcoPath.empty()) {
-          g_regionError = "Keine GEBCO-Daten verfügbar.";
-        } else {
-          tsunami_lab::visualization::gebco::Region l_reg;
-          if (tsunami_lab::visualization::gebco::readRegion(
-                  g_gebcoPath, sel, l_reg, g_bathMaxDim) &&
-              g_regionView && g_regionView->load(l_reg)) {
-            g_loadedSel = sel;
-            g_state = AppState::REGION_PREVIEW;
-            if (g_slab2)
-              g_regionView->buildSlab2Overlay(*g_slab2);
-            if (g_camera)
-              setCameraRegionView(*g_camera);
-          } else {
-            g_regionError = "Laden der Bathymetrie fehlgeschlagen.";
-          }
-        }
-      }
+      if (ImGui::Button("Bathymetrie laden  >>", ImVec2(-1, 0)))
+        loadRegionAndEnterPreview(sel);
       ImGui::PopStyleColor();
 
       if (!g_regionError.empty())
@@ -847,12 +897,22 @@ static void drawRegionUi(tsunami_lab::visualization::RegionView& regionView) {
   }
 
   // Fault geometry derived from the magnitude (updates live as Mw changes).
+  // Mirror buildDisplacementModel(): inside Slab2 coverage the factory uses
+  // the subduction-interface scaling, outside it falls back to Wells &
+  // Coppersmith. Before any click, assume the interface case whenever only
+  // in-coverage clicks can trigger a quake.
   namespace disp = tsunami_lab::displacement;
+  const bool l_ifaceScaling =
+      g_slab2 && (g_hasClick ? g_slabPt.valid : g_restrictToSlab2);
   disp::WellsCoppersmith::FaultGeometry l_geo =
-      disp::WellsCoppersmith::fromMagnitude(g_mw);
+      l_ifaceScaling ? disp::SubductionScaling::fromMagnitude(g_mw)
+                     : disp::WellsCoppersmith::fromMagnitude(g_mw);
   ImGui::Text("Versatz: %.2f m", l_geo.slip);
   ImGui::Text("Länge:   %.0f km", l_geo.length / 1000.0);
   ImGui::Text("Breite:  %.0f km", l_geo.width / 1000.0);
+  ImGui::TextDisabled(l_ifaceScaling
+                          ? "Skalierung: Strasser et al. 2010 (Interface)"
+                          : "Skalierung: Wells & Coppersmith 1994");
 
   if (g_slab2 == nullptr)
     ImGui::TextColored(

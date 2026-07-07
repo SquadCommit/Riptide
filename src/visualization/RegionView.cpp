@@ -204,6 +204,19 @@ void RegionView::worldToLonLat(float i_worldX,
   o_lat = l_latC - ((double)i_worldZ / m_scaleXZ) / l_mPerLat;
 }
 
+void RegionView::lonLatToWorld(double i_lon,
+                               double i_lat,
+                               float& o_worldX,
+                               float& o_worldZ) const {
+  const double l_latC = 0.5 * (latMin + latMax);
+  const double l_lonC = 0.5 * (lonMin + lonMax);
+  const double l_mPerLat = 111132.0;
+  const double l_mPerLon = 111320.0 * std::cos(glm::radians(l_latC));
+  // Inverse of worldToLonLat above.
+  o_worldX = (float)((i_lon - l_lonC) * l_mPerLon * m_scaleXZ);
+  o_worldZ = (float)((l_latC - i_lat) * l_mPerLat * m_scaleXZ);
+}
+
 void RegionView::computeDisplacementField(
     float i_worldX,
     float i_worldZ,
