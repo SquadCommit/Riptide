@@ -40,7 +40,14 @@ if(ARCH STREQUAL "none")
 elseif(ARCH STREQUAL "native")
   # Nix silently strips "-march=native" as impure; pass an explicit target
   # (e.g. -DARCH=znver4) instead.
-  add_compile_options(-march=native)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    # AArch64 clang has no -march=native; the CPU is selected via -mcpu.
+    add_compile_options(-mcpu=native)
+  else()
+    add_compile_options(-march=native)
+  endif()
+elseif(ARCH MATCHES "^apple-")
+  add_compile_options(-mcpu=${ARCH})
 else()
   add_compile_options(-march=${ARCH})
 endif()

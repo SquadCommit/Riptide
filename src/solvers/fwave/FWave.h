@@ -14,6 +14,15 @@
 
 #include <cmath>
 
+// Hot inner-loop kernel: without the hint Clang keeps netUpdates as an
+// out-of-line call inside the sweep loops (it exceeds the inline budget),
+// which forces the net-update arrays through the stack.
+#if defined(__clang__) || defined(__GNUC__)
+#define TSUNAMI_ALWAYS_INLINE inline __attribute__((always_inline))
+#else
+#define TSUNAMI_ALWAYS_INLINE inline
+#endif
+
 namespace tsunami_lab {
 namespace solvers {
 class FWave;
@@ -173,45 +182,43 @@ public:
    *
    * @remark sides with i_hL/i_hR <= c_dryTolerance are treated as dry.
    **/
-  static void netUpdates(t_real i_hL,
-                         t_real i_hR,
-                         t_real i_huL,
-                         t_real i_huR,
-                         t_real i_bL,
-                         t_real i_bR,
-                         t_real o_netUpdateL[2],
-                         t_real o_netUpdateR[2]) {
+  TSUNAMI_ALWAYS_INLINE static void netUpdates(t_real i_hL,
+                                               t_real i_hR,
+                                               t_real i_huL,
+                                               t_real i_huR,
+                                               t_real i_bL,
+                                               t_real i_bR,
+                                               t_real o_netUpdateL[2],
+                                               t_real o_netUpdateR[2]) {
     // Wet/dry handling: reflect at the wet-dry interface instead of discarding
-    // the edge. Both sides dry -> nothing to do. Otherwise the dry side is
-    // mirrored from the wet side (h, -hu, b): this turns the coast into a
-    // proper reflecting wall, and i_bL = i_bR zeroes the bed-slope source term
-    // across the steep coastal step. Together they prevent the one-sided
-    // momentum runaway that would otherwise drive the water height negative
-    // there.
+    // the edge. The dry side is mirrored from the wet side (h, -hu, b): this
+    // turns the coast into a proper reflecting wall, and i_bL = i_bR zeroes
+    // the bed-slope source term across the steep coastal step. Together they
+    // prevent the one-sided momentum runaway that would otherwise drive the
+    // water height negative there.
     //
-    // A branch-free rewrite was tried to make this auto-vectorizable, but
-    // neither GCC nor Clang vectorized the sweep loop through it, so it
-    // stays branching (see FWave.test.cpp's "[FWaveDryWet]" for coverage).
-    bool l_doUpdateLeft = true;
-    bool l_doUpdateRight = true;
+    // Written branch-free (ternaries compile to vector selects) so the sweep
+    // loops in WavePropagation1d/2d auto-vectorize through this function.
+    // Both sides dry produces garbage (0/0) in the intermediate values, but
+    // the do-update masks force both net-updates to zero in that case (see
+    // FWave.test.cpp's "[FWaveDryWet]" for coverage).
+    bool l_dryL = i_hL <= c_dryTolerance;
+    bool l_dryR = i_hR <= c_dryTolerance;
+    bool l_doUpdateLeft = !l_dryL;
+    bool l_doUpdateRight = !l_dryR;
 
-    if (i_hL <= c_dryTolerance && i_hR <= c_dryTolerance) {
-      o_netUpdateL[0] = o_netUpdateL[1] = 0;
-      o_netUpdateR[0] = o_netUpdateR[1] = 0;
-      return;
-    }
-    if (i_hL <= c_dryTolerance) { // left side dry -> reflect to the right
-      i_hL = i_hR;
-      i_huL = -i_huR;
-      i_bL = i_bR;
-      l_doUpdateLeft = false;
-    } else if (i_hR <= c_dryTolerance) { // right side dry -> reflect to the
-                                         // left
-      i_hR = i_hL;
-      i_huR = -i_huL;
-      i_bR = i_bL;
-      l_doUpdateRight = false;
-    }
+    t_real l_hL = l_dryL ? i_hR : i_hL;
+    t_real l_huL = l_dryL ? -i_huR : i_huL;
+    t_real l_bL = l_dryL ? i_bR : i_bL;
+    t_real l_hR = l_dryR ? i_hL : i_hR;
+    t_real l_huR = l_dryR ? -i_huL : i_huR;
+    t_real l_bR = l_dryR ? i_bL : i_bR;
+    i_hL = l_hL;
+    i_huL = l_huL;
+    i_bL = l_bL;
+    i_hR = l_hR;
+    i_huR = l_huR;
+    i_bR = l_bR;
 
     // compute velocities: u = hu / h
     t_real l_uL = i_huL / i_hL;
@@ -245,25 +252,26 @@ public:
     // set net-updates depending on wave speeds:
     // A^- delta Q = sum of Z_p where lambda_p < 0  (left-going waves)
     // A^+ delta Q = sum of Z_p where lambda_p > 0 (right-going waves)
+    //
+    // Branch-free selects; the four direction predicates are written out
+    // separately (not negations of each other) so NaN wave speeds keep the
+    // original semantics: every comparison with NaN is false, hence no
+    // contribution at all.
+    bool l_w1GoesL = l_waveSpeedL < 0;
+    bool l_w1GoesR = l_waveSpeedL >= 0;
+    bool l_w2GoesR = l_waveSpeedR > 0;
+    bool l_w2GoesL = l_waveSpeedR <= 0;
+
     for (unsigned short l_qt = 0; l_qt < 2; l_qt++) {
-      // init net updates to zero
-      o_netUpdateL[l_qt] = 0;
-      o_netUpdateR[l_qt] = 0;
+      t_real l_updL = (l_w1GoesL ? l_waveL[l_qt] : 0.0f) +
+                      (l_w2GoesL ? l_waveR[l_qt] : 0.0f);
+      t_real l_updR = (l_w1GoesR ? l_waveL[l_qt] : 0.0f) +
+                      (l_w2GoesR ? l_waveR[l_qt] : 0.0f);
 
-      // 1st wave: Z_1 goes left if lambda_1 < 0, right otherwise. Updates to a
-      // reflected (dry) side are skipped.
-      if (l_waveSpeedL < 0 && l_doUpdateLeft) {
-        o_netUpdateL[l_qt] += l_waveL[l_qt];
-      } else if (l_waveSpeedL >= 0 && l_doUpdateRight) {
-        o_netUpdateR[l_qt] += l_waveL[l_qt];
-      }
-
-      // 2nd wave:  Z_2 goes right if lambda_2 > 0, left otherwise.
-      if (l_waveSpeedR > 0 && l_doUpdateRight) {
-        o_netUpdateR[l_qt] += l_waveR[l_qt];
-      } else if (l_waveSpeedR <= 0 && l_doUpdateLeft) {
-        o_netUpdateL[l_qt] += l_waveR[l_qt];
-      }
+      // updates to a reflected (dry) side are dropped; this also forces the
+      // both-sides-dry case (NaN intermediates) to exactly zero.
+      o_netUpdateL[l_qt] = l_doUpdateLeft ? l_updL : 0.0f;
+      o_netUpdateR[l_qt] = l_doUpdateRight ? l_updR : 0.0f;
     }
   }
 };

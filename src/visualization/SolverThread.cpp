@@ -32,7 +32,11 @@ t_real SolverThread::maxWaveSpeed() {
     for (t_idx l_x = 0; l_x < m_nx; l_x++) {
       const t_idx l_i = l_x + l_y * l_stride;
       const t_real l_hc = l_h[l_i];
-      if (l_hc <= t_real(0))
+      // Skip cells the solver treats as dry (h <= c_dryTolerance), not just
+      // h <= 0: a nearly-dry cell with leftover momentum yields a huge
+      // spurious u = hu/h that would collapse the CFL time step for the
+      // whole run even though it carries no waves.
+      if (l_hc <= c_dryTolerance)
         continue;
       const t_real l_u = std::abs(l_hu[l_i] / l_hc);
       const t_real l_v = std::abs(l_hv[l_i] / l_hc);
