@@ -22,7 +22,7 @@ public:
 
   void init();
   bool load(const gebco::Region& i_region);
-  void draw(const glm::mat4& i_vp) const;
+  void draw(const glm::mat4& i_vp, const glm::vec3& i_camPos) const;
 
   bool loaded() const { return m_numLods > 0; }
 
@@ -73,12 +73,12 @@ public:
                      double& o_lon,
                      double& o_lat) const;
 
-  // Per-frame LOD hints, set by the main loop before draw(): camera orbit
-  // distance (world units) and framebuffer height (pixels). draw() uses them
-  // to pick an index-buffer level that keeps triangles at roughly pixel size —
-  // zoomed out, sub-pixel triangles would otherwise multiply the MSAA cost
-  // into unusable frame rates without adding any visible detail.
-  float lodCamDistance = 330.0f;
+  // Per-frame LOD hint, set by the main loop before draw(): framebuffer
+  // height in pixels. draw() combines it with each screen-space tile's own
+  // camera distance to pick an index-buffer level that keeps triangles at
+  // roughly pixel size — zoomed out, sub-pixel triangles would otherwise
+  // multiply the MSAA cost into unusable frame rates without adding any
+  // visible detail.
   int lodViewportPx = 720;
 
   float vertExaggeration = 25.0f;
