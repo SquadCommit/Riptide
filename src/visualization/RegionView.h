@@ -73,6 +73,13 @@ public:
                      double& o_lon,
                      double& o_lat) const;
 
+  // Inverse of worldToLonLat — used to place a scenario's fixed epicentre
+  // (given in lon/lat) at its world position without a mouse click.
+  void lonLatToWorld(double i_lon,
+                     double i_lat,
+                     float& o_worldX,
+                     float& o_worldZ) const;
+
   // Per-frame LOD hint, set by the main loop before draw(): framebuffer
   // height in pixels. draw() combines it with each screen-space tile's own
   // camera distance to pick an index-buffer level that keeps triangles at

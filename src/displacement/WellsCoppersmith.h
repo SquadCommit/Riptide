@@ -37,7 +37,7 @@ public:
    **/
   static FaultGeometry fromMagnitude(double i_mw) {
     FaultGeometry l_geo;
-    l_geo.slip = std::pow(10.0, 0.90 * i_mw - 6.32);
+    l_geo.slip = std::pow(10.0, 0.69 * i_mw - 4.80);
     l_geo.length = std::pow(10.0, 0.59 * i_mw - 2.44) * 1000.0;
     l_geo.width = std::pow(10.0, 0.32 * i_mw - 1.01) * 1000.0;
     return l_geo;

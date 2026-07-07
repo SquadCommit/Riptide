@@ -144,6 +144,7 @@ add_executable(tests
   src/setups/checkpoint/CheckPoint.test.cpp
   src/displacement/GaussianDisplacement.test.cpp
   src/displacement/OkadaDisplacement.test.cpp
+  src/displacement/SubductionScaling.test.cpp
   src/visualization/SolverThread.test.cpp
   src/io/stations/Stations.test.cpp
   src/io/netcdf/NetCDF.test.cpp
