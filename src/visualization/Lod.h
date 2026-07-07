@@ -67,10 +67,17 @@ inline int pickLevel(float i_cellWorld,
 
 // World-space XZ bounding box of the view frustum's intersection with the
 // horizontal slab y ∈ [i_minY, i_maxY] (the vertical extent of the mesh).
-// Casts a ray through each viewport corner and clips it against the slab; a
-// corner ray that misses the slab contributes its full near→far segment, so
-// the result degrades to a conservative superset instead of dropping
-// geometry. Used to cull off-screen grid rows/columns when zoomed in.
+// The intersection is a convex polytope; its XZ extremes sit on vertices
+// created where the frustum's edges cross the slab planes, so ALL 12 edges
+// of the frustum (4 side edges plus the 4 near-plane and 4 far-plane
+// rectangle edges) are clipped against the slab. Clipping only the 4 side
+// edges — the viewport-corner rays — is NOT enough: at a grazing tilt those
+// rays leave the thin slab within a short distance (the upper ones through
+// its top, the lower ones through its bottom), while near-horizontal view
+// directions through the frustum's interior stay inside the slab all the
+// way to the far plane; their reach shows up only on the far-plane edges.
+// Missing them culled distant, clearly-visible terrain. Used to cull
+// off-screen grid rows/columns when zoomed in.
 inline void frustumFootprintXZ(const glm::mat4& i_vp,
                                float i_minY,
                                float i_maxY,
@@ -83,34 +90,51 @@ inline void frustumFootprintXZ(const glm::mat4& i_vp,
   o_maxX = o_maxZ = -3.4e38f;
   const float l_lo = std::min(i_minY, i_maxY) - 0.01f;
   const float l_hi = std::max(i_minY, i_maxY) + 0.01f;
-  const float l_ndc[4][2] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
-  for (int l_c = 0; l_c < 4; l_c++) {
-    glm::vec4 l_n4 = l_inv * glm::vec4(l_ndc[l_c][0], l_ndc[l_c][1], -1, 1);
-    glm::vec4 l_f4 = l_inv * glm::vec4(l_ndc[l_c][0], l_ndc[l_c][1], 1, 1);
-    const glm::vec3 l_n = glm::vec3(l_n4) / l_n4.w;
-    const glm::vec3 l_d = glm::vec3(l_f4) / l_f4.w - l_n;
 
+  // The 8 frustum corners: near plane first (indices 0-3), then far.
+  const float l_ndc[4][2] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
+  glm::vec3 l_v[8];
+  for (int l_p = 0; l_p < 2; l_p++)
+    for (int l_c = 0; l_c < 4; l_c++) {
+      const glm::vec4 l_h = l_inv * glm::vec4(l_ndc[l_c][0], l_ndc[l_c][1],
+                                              l_p == 0 ? -1.0f : 1.0f, 1.0f);
+      l_v[l_p * 4 + l_c] = glm::vec3(l_h) / l_h.w;
+    }
+
+  static const int k_edges[12][2] = {
+      {0, 4}, {1, 5}, {2, 6}, {3, 7}, // side edges (corner rays)
+      {0, 1}, {1, 3}, {3, 2}, {2, 0}, // near-plane rectangle
+      {4, 5}, {5, 7}, {7, 6}, {6, 4}, // far-plane rectangle
+  };
+  for (int l_e = 0; l_e < 12; l_e++) {
+    const glm::vec3& l_a = l_v[k_edges[l_e][0]];
+    const glm::vec3 l_d = l_v[k_edges[l_e][1]] - l_a;
     float l_t0 = 0.0f, l_t1 = 1.0f;
     if (std::abs(l_d.y) > 1e-9f) {
-      const float l_ta = (l_lo - l_n.y) / l_d.y;
-      const float l_tb = (l_hi - l_n.y) / l_d.y;
+      const float l_ta = (l_lo - l_a.y) / l_d.y;
+      const float l_tb = (l_hi - l_a.y) / l_d.y;
       l_t0 = std::max(0.0f, std::min(l_ta, l_tb));
       l_t1 = std::min(1.0f, std::max(l_ta, l_tb));
-      if (l_t1 < l_t0) {
-        l_t0 = 0.0f; // ray misses the slab: keep the full segment
-        l_t1 = 1.0f; // (conservative, never culls visible geometry)
-      }
-    } else if (l_n.y < l_lo || l_n.y > l_hi) {
-      l_t0 = 0.0f;
-      l_t1 = 1.0f;
+      if (l_t1 < l_t0)
+        continue; // edge misses the slab entirely
+    } else if (l_a.y < l_lo || l_a.y > l_hi) {
+      continue; // horizontal edge outside the slab
     }
-    for (int l_e = 0; l_e < 2; l_e++) {
-      const glm::vec3 l_p = l_n + (l_e == 0 ? l_t0 : l_t1) * l_d;
+    for (int l_k = 0; l_k < 2; l_k++) {
+      const glm::vec3 l_p = l_a + (l_k == 0 ? l_t0 : l_t1) * l_d;
       o_minX = std::min(o_minX, l_p.x);
       o_maxX = std::max(o_maxX, l_p.x);
       o_minZ = std::min(o_minZ, l_p.z);
       o_maxZ = std::max(o_maxZ, l_p.z);
     }
+  }
+
+  // No edge touched the slab (degenerate matrix or slab fully outside the
+  // frustum): return an unbounded box so callers fall back to the full grid
+  // instead of culling geometry.
+  if (o_minX > o_maxX || o_minZ > o_maxZ) {
+    o_minX = o_minZ = -3.4e38f;
+    o_maxX = o_maxZ = 3.4e38f;
   }
 }
 
@@ -139,6 +163,15 @@ inline void visibleRange(float i_a0,
   l_f1 = std::max(-2.0f, std::min((float)i_n + 1.0f, l_f1));
   o_0 = std::max(0, (int)std::floor(l_f0) - 1);
   o_1 = std::min(i_n - 1, (int)std::ceil(l_f1) + 1);
+  // At grazing camera angles the slab-intersection footprint can land
+  // entirely outside the grid's extent on one side (both bounds clamp to
+  // the same edge), inverting the range. That must never cull real
+  // geometry, so fall back to the full grid — same "conservative superset"
+  // rule frustumFootprintXZ itself follows.
+  if (o_0 > o_1) {
+    o_0 = 0;
+    o_1 = i_n - 1;
+  }
 }
 
 // Draws the quads of LOD level log2(i_stride) that cover the stride-1 vertex
@@ -162,6 +195,71 @@ inline void drawGridWindow(
     glDrawElements(GL_TRIANGLES, l_cnt, GL_UNSIGNED_INT,
                    (const void*)((size_t)((size_t)l_r * l_cols + l_c0) * 6 *
                                  sizeof(unsigned int)));
+}
+
+// Splits [i_lo, i_hi] into up to i_n contiguous, non-overlapping bands.
+// Returns the actual band count (<= i_n, 0 if the range is empty).
+inline int splitBands(int i_lo, int i_hi, int i_n, int* o_starts, int* o_ends) {
+  if (i_hi < i_lo)
+    return 0;
+  const int l_total = i_hi - i_lo + 1;
+  const int l_n = std::min(i_n, std::max(1, l_total));
+  int l_pos = i_lo;
+  for (int l_b = 0; l_b < l_n; l_b++) {
+    const int l_end = i_lo + (int)((long long)(l_b + 1) * l_total / l_n) - 1;
+    o_starts[l_b] = l_pos;
+    o_ends[l_b] = std::max(l_pos, l_end);
+    l_pos = o_ends[l_b] + 1;
+  }
+  return l_n;
+}
+
+// Draws a grid window at a LOD that varies per screen-space band instead of
+// one level for the whole window. A single global level (picked from camera
+// orbit distance alone) is fine for a top-down view, where every visible
+// cell is roughly equidistant, but badly wrong at a grazing/tilted-down
+// angle: the near part of the same window can be tens of world units away
+// while the far part is thousands away, so one stride is either far too
+// coarse for the near part or far too fine for the far part. Splitting the
+// window into up to i_maxBands x i_maxBands tiles and picking each tile's
+// level from its own midpoint's true camera distance fixes both.
+template <class BindLevelFn>
+inline void drawGridWindowBanded(int i_w,
+                                 int i_h,
+                                 int i_i0,
+                                 int i_i1,
+                                 int i_j0,
+                                 int i_j1,
+                                 float i_x0,
+                                 float i_x1,
+                                 float i_z0,
+                                 float i_z1,
+                                 const glm::vec3& i_camPos,
+                                 float i_cellWorld,
+                                 int i_numLevels,
+                                 int i_viewportPx,
+                                 int i_maxBands,
+                                 BindLevelFn i_bindLevel) {
+  int l_iS[8], l_iE[8], l_jS[8], l_jE[8];
+  i_maxBands = std::min(i_maxBands, 8);
+  const int l_ni = splitBands(i_i0, i_i1, i_maxBands, l_iS, l_iE);
+  const int l_nj = splitBands(i_j0, i_j1, i_maxBands, l_jS, l_jE);
+  for (int l_bj = 0; l_bj < l_nj; l_bj++) {
+    const float l_wz = i_z0 + (i_z1 - i_z0) * 0.5f *
+                                  (float)(l_jS[l_bj] + l_jE[l_bj]) /
+                                  (float)std::max(1, i_h - 1);
+    for (int l_bi = 0; l_bi < l_ni; l_bi++) {
+      const float l_wx = i_x0 + (i_x1 - i_x0) * 0.5f *
+                                    (float)(l_iS[l_bi] + l_iE[l_bi]) /
+                                    (float)std::max(1, i_w - 1);
+      const float l_dist = glm::length(i_camPos - glm::vec3(l_wx, 0.0f, l_wz));
+      const int l_level =
+          pickLevel(i_cellWorld, i_numLevels, l_dist, i_viewportPx);
+      i_bindLevel(l_level);
+      drawGridWindow(i_w, i_h, 1 << l_level, l_iS[l_bi], l_iE[l_bi], l_jS[l_bj],
+                     l_jE[l_bj]);
+    }
+  }
 }
 
 } // namespace lod
