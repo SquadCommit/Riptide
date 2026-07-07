@@ -9,13 +9,15 @@ namespace visualization {
 
 class Camera {
 public:
+  glm::vec3 position() const {
+    return m_target +
+           glm::vec3(m_distance * std::cos(m_elevation) * std::sin(m_azimuth),
+                     m_distance * std::sin(m_elevation),
+                     m_distance * std::cos(m_elevation) * std::cos(m_azimuth));
+  }
+
   glm::mat4 view() const {
-    glm::vec3 l_pos =
-        m_target +
-        glm::vec3(m_distance * std::cos(m_elevation) * std::sin(m_azimuth),
-                  m_distance * std::sin(m_elevation),
-                  m_distance * std::cos(m_elevation) * std::cos(m_azimuth));
-    return glm::lookAt(l_pos, m_target, glm::vec3(0, 1, 0));
+    return glm::lookAt(position(), m_target, glm::vec3(0, 1, 0));
   }
 
   glm::mat4 projection(float i_aspect) const {

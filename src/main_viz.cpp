@@ -1116,7 +1116,7 @@ drawSlabLegend(const tsunami_lab::visualization::GlobeView& i_globe) {
     return;
 
   static const LegendStop l_stops[] = {
-      {0.00f, IM_COL32(255, 195, 60, 255)},  // trench (shallow)
+      {0.00f, IM_COL32(255, 195, 60, 255)}, // trench (shallow)
       {0.35f, IM_COL32(255, 95, 40, 255)},
       {0.70f, IM_COL32(205, 45, 115, 255)},
       {1.00f, IM_COL32(115, 35, 165, 255)}}; // deepest slab
@@ -1296,9 +1296,8 @@ int main() {
       l_globe.lodViewportPx = l_fbH;
       l_globe.draw(vp);
     } else {
-      l_region.lodCamDistance = l_camera.getDistance();
       l_region.lodViewportPx = l_fbH;
-      l_region.draw(vp);
+      l_region.draw(vp, l_camera.position());
     }
 
     l_ui.beginFrame();

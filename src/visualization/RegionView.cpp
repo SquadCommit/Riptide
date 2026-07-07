@@ -114,6 +114,16 @@ bool RegionView::load(const gebco::Region& i_region) {
     m_maxElev = std::max(m_maxElev, i_region.elev[l_v]);
   }
 
+  // Resize the flat sea overlay to the grid's actual (possibly non-square)
+  // extent. init() seeds it as a fixed ±100 square, matching only the larger
+  // axis — a non-square region left it overhanging past the real coastline
+  // on the shorter axis. That overhang is easy to miss face-on but, viewed
+  // at a grazing tilt, its dead-straight edge gets foreshortened into a
+  // large, hard-edged patch of flat overlay colour with no terrain under it.
+  const float l_quad[8] = {m_x0, m_z1, m_x1, m_z1, m_x0, m_z0, m_x1, m_z0};
+  glBindBuffer(GL_ARRAY_BUFFER, m_seaVbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(l_quad), l_quad, GL_STATIC_DRAW);
+
   m_xz = l_xz;
   m_hasDispl = false;
   // A new grid invalidates the overlay until buildSlab2Overlay() rebuilds it.
@@ -427,15 +437,20 @@ void RegionView::updateWater(const float* i_h) {
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void RegionView::draw(const glm::mat4& i_vp) const {
+void RegionView::draw(const glm::mat4& i_vp, const glm::vec3& i_camPos) const {
   if (m_numLods == 0)
     return;
 
-  // Pick the index-buffer level that keeps triangles at roughly pixel size —
-  // rendering sub-pixel triangles adds no detail but multiplies the MSAA
-  // fill cost enough to stall the GPU when zoomed out.
-  const int l_lod =
-      lod::pickLevel(m_cellWorld, m_numLods, lodCamDistance, lodViewportPx);
+  // Number of screen-space tiles (per axis) the visible window is split into
+  // before picking a LOD level, so each tile's level is based on ITS OWN
+  // camera distance rather than one distance for the whole draw call. A
+  // single level (from camera orbit distance alone) is fine top-down, where
+  // every visible cell is roughly equidistant, but at a grazing/tilted-down
+  // angle the near part of the same window can be tens of world units away
+  // while the far part is thousands away — one stride is then either far too
+  // coarse for the far part (visible as huge flat facets) or far too fine for
+  // the near part.
+  const int k_lodBands = 4;
 
   // Frustum-cull off-screen grid rows/columns: zoomed in, the full mesh would
   // put millions of off-screen triangles through the vertex stage every frame.
@@ -469,18 +484,25 @@ void RegionView::draw(const glm::mat4& i_vp) const {
   m_terrShader.setFloat("uDispRange", m_dispPeak);
   m_terrShader.setInt("uMode", field == Field::Displacement ? 1 : 0);
   glBindVertexArray(m_vao);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebos[l_lod]);
-  const int l_stride = 1 << l_lod;
+  auto l_bindTerrLod = [&](int i_level) {
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebos[i_level]);
+  };
   if (l_simView) {
     m_terrShader.setInt("uClip", 1); // land only, writes depth
-    lod::drawGridWindow(gridW, gridH, l_stride, l_i0, l_i1, l_j0, l_j1);
+    lod::drawGridWindowBanded(gridW, gridH, l_i0, l_i1, l_j0, l_j1, m_x0, m_x1,
+                              m_z0, m_z1, i_camPos, m_cellWorld, m_numLods,
+                              lodViewportPx, k_lodBands, l_bindTerrLod);
     m_terrShader.setInt("uClip", 2); // seabed only, colour without depth write
     glDepthMask(GL_FALSE);
-    lod::drawGridWindow(gridW, gridH, l_stride, l_i0, l_i1, l_j0, l_j1);
+    lod::drawGridWindowBanded(gridW, gridH, l_i0, l_i1, l_j0, l_j1, m_x0, m_x1,
+                              m_z0, m_z1, i_camPos, m_cellWorld, m_numLods,
+                              lodViewportPx, k_lodBands, l_bindTerrLod);
     glDepthMask(GL_TRUE);
   } else {
     m_terrShader.setInt("uClip", 0);
-    lod::drawGridWindow(gridW, gridH, l_stride, l_i0, l_i1, l_j0, l_j1);
+    lod::drawGridWindowBanded(gridW, gridH, l_i0, l_i1, l_j0, l_j1, m_x0, m_x1,
+                              m_z0, m_z1, i_camPos, m_cellWorld, m_numLods,
+                              lodViewportPx, k_lodBands, l_bindTerrLod);
   }
   glBindVertexArray(0);
 
@@ -495,15 +517,16 @@ void RegionView::draw(const glm::mat4& i_vp) const {
     m_waterShader.setFloat("uAnom", m_waterAnom);
     // The water grid spans the same lon/lat box as the terrain, so the same
     // footprint applies — only its vertex counts differ.
-    const int l_wLod = lod::pickLevel(m_waterCellWorld, m_waterNumLods,
-                                      lodCamDistance, lodViewportPx);
     int l_wi0, l_wi1, l_wj0, l_wj1;
     lod::visibleRange(m_x0, m_x1, (int)m_simNx, l_minX, l_maxX, l_wi0, l_wi1);
     lod::visibleRange(m_z0, m_z1, (int)m_simNy, l_minZ, l_maxZ, l_wj0, l_wj1);
     glBindVertexArray(m_waterVao);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_waterEbos[l_wLod]);
-    lod::drawGridWindow((int)m_simNx, (int)m_simNy, 1 << l_wLod, l_wi0, l_wi1,
-                        l_wj0, l_wj1);
+    lod::drawGridWindowBanded(
+        (int)m_simNx, (int)m_simNy, l_wi0, l_wi1, l_wj0, l_wj1, m_x0, m_x1,
+        m_z0, m_z1, i_camPos, m_waterCellWorld, m_waterNumLods, lodViewportPx,
+        k_lodBands, [&](int i_level) {
+          glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_waterEbos[i_level]);
+        });
     glBindVertexArray(0);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
