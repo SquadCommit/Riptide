@@ -121,6 +121,12 @@ private:
   float m_minElev = 0.0f, m_maxElev = 0.0f;
 
   std::vector<float> m_xz;
+  // Bathymetry elevation (m, negative underwater), row-major (row=lat
+  // south->north, col=lon west->east), same layout/size as m_xz. Kept on the
+  // CPU side (in addition to the GPU-only upload above) so
+  // computeDisplacementField() can derive the local seafloor slope for the
+  // Tanioka & Satake (1996) correction.
+  std::vector<float> m_elev;
   float m_scaleXZ = 1.0f;
   bool m_hasDispl = false;
   float m_dispPeak = 0.0f;

@@ -335,6 +335,16 @@ static bool buildSimSetup(tsunami_lab::t_idx& o_nx,
   const double l_latC = 0.5 * (l_src.latMin + l_src.latMax);
   const double l_mPerLat = 111132.0;
   const double l_mPerLon = 111320.0 * std::cos(l_latC * M_PI / 180.0);
+  // Metric cell size of the GEBCO source raster, for the bathymetry-gradient
+  // (Tanioka & Satake 1996) correction below.
+  const double l_srcDLonM = (l_src.w > 1)
+                               ? (l_src.lonMax - l_src.lonMin) /
+                                     (double)(l_src.w - 1) * l_mPerLon
+                               : 0.0;
+  const double l_srcDLatM = (l_src.h > 1)
+                               ? (l_src.latMax - l_src.latMin) /
+                                     (double)(l_src.h - 1) * l_mPerLat
+                               : 0.0;
   double l_widthM = 0.0, l_heightM = 0.0;
   regionMetres(l_src.lonMin, l_src.lonMax, l_src.latMin, l_src.latMax, l_widthM,
                l_heightM);
@@ -378,7 +388,30 @@ static bool buildSimSetup(tsunami_lab::t_idx& o_nx,
       if (l_hasDisp && l_b < 0.0f) {
         const double l_east = (l_lon - g_epiLon) * l_mPerLon;
         const double l_north = (l_lat - g_epiLat) * l_mPerLat;
-        l_h += (float)g_displModel->verticalDisplacement(l_east, l_north);
+        double l_uz = g_displModel->verticalDisplacement(l_east, l_north);
+
+        // Tanioka & Satake (1996): fold horizontal seafloor motion over the
+        // local bathymetric slope into the effective vertical displacement.
+        double l_uEast = 0.0, l_uNorth = 0.0;
+        g_displModel->horizontalDisplacement(l_east, l_north, l_uEast,
+                                             l_uNorth);
+        if ((l_uEast != 0.0 || l_uNorth != 0.0) && l_srcDLonM > 0.0 &&
+            l_srcDLatM > 0.0) {
+          const float l_eE =
+              sampleGrid(l_src.elev, l_src.w, l_src.h, l_fx + 1.0, l_fy);
+          const float l_eW =
+              sampleGrid(l_src.elev, l_src.w, l_src.h, l_fx - 1.0, l_fy);
+          const float l_eN =
+              sampleGrid(l_src.elev, l_src.w, l_src.h, l_fx, l_fy + 1.0);
+          const float l_eS =
+              sampleGrid(l_src.elev, l_src.w, l_src.h, l_fx, l_fy - 1.0);
+          const double l_gradEast = (l_eE - l_eW) / (2.0 * l_srcDLonM);
+          const double l_gradNorth = (l_eN - l_eS) / (2.0 * l_srcDLatM);
+          l_uz = displacement::effectiveVerticalDisplacement(
+              l_uz, l_uEast, l_uNorth, l_gradEast, l_gradNorth);
+        }
+
+        l_h += (float)l_uz;
         if (l_h < 0.0f)
           l_h = 0.0f;
       }
