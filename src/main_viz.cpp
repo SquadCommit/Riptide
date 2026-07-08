@@ -337,14 +337,14 @@ static bool buildSimSetup(tsunami_lab::t_idx& o_nx,
   const double l_mPerLon = 111320.0 * std::cos(l_latC * M_PI / 180.0);
   // Metric cell size of the GEBCO source raster, for the bathymetry-gradient
   // (Tanioka & Satake 1996) correction below.
-  const double l_srcDLonM = (l_src.w > 1)
-                               ? (l_src.lonMax - l_src.lonMin) /
-                                     (double)(l_src.w - 1) * l_mPerLon
-                               : 0.0;
-  const double l_srcDLatM = (l_src.h > 1)
-                               ? (l_src.latMax - l_src.latMin) /
-                                     (double)(l_src.h - 1) * l_mPerLat
-                               : 0.0;
+  const double l_srcDLonM =
+      (l_src.w > 1)
+          ? (l_src.lonMax - l_src.lonMin) / (double)(l_src.w - 1) * l_mPerLon
+          : 0.0;
+  const double l_srcDLatM =
+      (l_src.h > 1)
+          ? (l_src.latMax - l_src.latMin) / (double)(l_src.h - 1) * l_mPerLat
+          : 0.0;
   double l_widthM = 0.0, l_heightM = 0.0;
   regionMetres(l_src.lonMin, l_src.lonMax, l_src.latMin, l_src.latMax, l_widthM,
                l_heightM);
@@ -624,7 +624,6 @@ static void triggerScenario(const tsunami_lab::visualization::Scenario& i_sc) {
 }
 
 // ImGui panels
-
 
 // Shared width of the two left-hand panels. Note the built-in ImGui font only
 // covers ASCII + Latin-1 — characters beyond that (arrows, dashes, ellipses)
