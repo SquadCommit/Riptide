@@ -125,6 +125,7 @@ bool RegionView::load(const gebco::Region& i_region) {
   glBufferData(GL_ARRAY_BUFFER, sizeof(l_quad), l_quad, GL_STATIC_DRAW);
 
   m_xz = l_xz;
+  m_elev = i_region.elev;
   m_hasDispl = false;
   // A new grid invalidates the overlay until buildSlab2Overlay() rebuilds it.
   m_hasOverlay = false;
@@ -226,13 +227,57 @@ void RegionView::computeDisplacementField(
   const size_t l_n = m_xz.size() / 2;
   o_disp.assign(l_n, 0.0f);
   o_peak = 0.0f;
-  for (size_t l_v = 0; l_v < l_n; l_v++) {
-    // Local east/north offset from the click point, in metres. World Z runs
-    // south to north as -lat, so +north = -dz.
-    double l_east = ((double)m_xz[l_v * 2 + 0] - i_worldX) / m_scaleXZ;
-    double l_north = -((double)m_xz[l_v * 2 + 1] - i_worldZ) / m_scaleXZ;
-    o_disp[l_v] = (float)i_model.verticalDisplacement(l_east, l_north);
-    o_peak = std::max(o_peak, std::abs(o_disp[l_v]));
+  // Bathymetry-gradient (Tanioka & Satake 1996) correction needs the 2-D grid
+  // structure to find neighbours; only available with a matching, structured
+  // elevation grid (always true after a successful load()).
+  const bool l_hasElev =
+      m_elev.size() == l_n && gridW > 1 && gridH > 1;
+
+  for (int j = 0; j < gridH; j++) {
+    for (int i = 0; i < gridW; i++) {
+      const size_t l_v = (size_t)j * gridW + i;
+      // Local east/north offset from the click point, in metres. World Z
+      // runs south to north as -lat, so +north = -dz.
+      double l_east = ((double)m_xz[l_v * 2 + 0] - i_worldX) / m_scaleXZ;
+      double l_north = -((double)m_xz[l_v * 2 + 1] - i_worldZ) / m_scaleXZ;
+      double l_uz = i_model.verticalDisplacement(l_east, l_north);
+
+      if (l_hasElev) {
+        double l_uEast = 0.0, l_uNorth = 0.0;
+        i_model.horizontalDisplacement(l_east, l_north, l_uEast, l_uNorth);
+        if (l_uEast != 0.0 || l_uNorth != 0.0) {
+          // Central differences on the structured grid (one-sided at edges).
+          const int l_i0 = std::max(i - 1, 0);
+          const int l_i1 = std::min(i + 1, gridW - 1);
+          const int l_j0 = std::max(j - 1, 0);
+          const int l_j1 = std::min(j + 1, gridH - 1);
+          const size_t l_ve0 = (size_t)j * gridW + l_i0;
+          const size_t l_ve1 = (size_t)j * gridW + l_i1;
+          const size_t l_vn0 = (size_t)l_j0 * gridW + i;
+          const size_t l_vn1 = (size_t)l_j1 * gridW + i;
+
+          double l_gradEast = 0.0, l_gradNorth = 0.0;
+          if (l_i1 != l_i0) {
+            double l_dEastM =
+                ((double)m_xz[l_ve1 * 2 + 0] - (double)m_xz[l_ve0 * 2 + 0]) /
+                m_scaleXZ;
+            l_gradEast = (m_elev[l_ve1] - m_elev[l_ve0]) / l_dEastM;
+          }
+          if (l_j1 != l_j0) {
+            double l_dNorthM =
+                -((double)m_xz[l_vn1 * 2 + 1] - (double)m_xz[l_vn0 * 2 + 1]) /
+                m_scaleXZ;
+            l_gradNorth = (m_elev[l_vn1] - m_elev[l_vn0]) / l_dNorthM;
+          }
+
+          l_uz = displacement::effectiveVerticalDisplacement(
+              l_uz, l_uEast, l_uNorth, l_gradEast, l_gradNorth);
+        }
+      }
+
+      o_disp[l_v] = (float)l_uz;
+      o_peak = std::max(o_peak, std::abs(o_disp[l_v]));
+    }
   }
 }
 
