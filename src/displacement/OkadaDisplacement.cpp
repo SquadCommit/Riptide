@@ -180,9 +180,8 @@ void OkadaDisplacement::horizontalDisplacement(double i_east,
     double l_db = i_eta * l_sinD - i_q * l_cosD;
     double l_yb = i_eta * l_cosD + i_q * l_sinD;
     if (l_cosD > k_eps) {
-      return (1.0 - 2.0 * l_nu) *
-                 (l_yb / l_nz(l_cosD * (i_R + l_db)) -
-                  std::log(std::max(i_R + i_eta, k_eps))) +
+      return (1.0 - 2.0 * l_nu) * (l_yb / l_nz(l_cosD * (i_R + l_db)) -
+                                   std::log(std::max(i_R + i_eta, k_eps))) +
              (l_sinD / l_cosD) * l_i4(l_db, i_eta, i_q, i_R);
     }
     double l_Rdb = l_nz(i_R + l_db);
@@ -263,8 +262,10 @@ void OkadaDisplacement::horizontalDisplacement(double i_east,
   double l_uyDsSum = l_uyDs(l_xo, l_p, l_q) - l_uyDs(l_xo, l_y1, l_q) -
                      l_uyDs(l_x1, l_p, l_q) + l_uyDs(l_x1, l_y1, l_q);
 
-  double l_ux = -m_u1 / (2.0 * M_PI) * l_uxSsSum - m_u2 / (2.0 * M_PI) * l_uxDsSum;
-  double l_uy = -m_u1 / (2.0 * M_PI) * l_uySsSum - m_u2 / (2.0 * M_PI) * l_uyDsSum;
+  double l_ux =
+      -m_u1 / (2.0 * M_PI) * l_uxSsSum - m_u2 / (2.0 * M_PI) * l_uxDsSum;
+  double l_uy =
+      -m_u1 / (2.0 * M_PI) * l_uySsSum - m_u2 / (2.0 * M_PI) * l_uyDsSum;
 
   // Rotate from the fault-local frame (+x along strike) back to geographic
   // (east, north) — okada85.m: ue = sinStrike*ux - cosStrike*uy;
