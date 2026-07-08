@@ -10,7 +10,10 @@ namespace displacement {
  * Vertical co-seismic surface deformation (uz) of a rectangular fault in an
  * elastic half-space, after Okada (1992).
  *
- * Only the vertical component is evaluated; ux/uy are not needed by the solver.
+ * The vertical component alone drives the solver's initial condition; the
+ * horizontal components (ux/uy, via horizontalDisplacement()) exist to feed
+ * the Tanioka & Satake (1996) sloping-seafloor correction, which folds them
+ * back into an effective vertical displacement wherever bathymetry is steep.
  *
  * The fault is parameterised by its strike/dip/rake (degrees), slip (metres),
  * along-strike length and down-dip width (metres) and the depth of its top
@@ -53,6 +56,21 @@ public:
    * @return vertical displacement uz in metres.
    */
   double verticalDisplacement(double i_east, double i_north) const override;
+
+  /**
+   * Evaluates the horizontal surface displacement at a query point (Okada
+   * 1985, eqs. 25/26; strike-slip and dip-slip terms only — this model
+   * carries no tensile/opening component).
+   *
+   * @param i_east   east coordinate in metres relative to the fault centroid.
+   * @param i_north  north coordinate in metres relative to the fault centroid.
+   * @param o_east   east component of the horizontal displacement (m).
+   * @param o_north  north component of the horizontal displacement (m).
+   */
+  void horizontalDisplacement(double i_east,
+                              double i_north,
+                              double& o_east,
+                              double& o_north) const override;
 
   /**
    * Radius beyond which the displacement is negligible.
