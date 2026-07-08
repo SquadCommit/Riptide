@@ -299,7 +299,7 @@ TEST_CASE("Test the derivation of the FWave net-updates.", "[FWaveUpdates]") {
 }
 
 TEST_CASE("Test the wet/dry combinations of FWave net-updates.",
-         "[FWaveDryWet]") {
+          "[FWaveDryWet]") {
   float l_netUpdatesL[2] = {0};
   float l_netUpdatesR[2] = {0};
 

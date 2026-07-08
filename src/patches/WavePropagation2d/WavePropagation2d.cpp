@@ -206,9 +206,8 @@ void tsunami_lab::patches::WavePropagation2d::timeStep(t_real i_scaling,
 
         solvers::FWave::netUpdates(
             l_hCur[l_row + l_ix], l_hCur[l_row + l_ix + 1],
-            l_huCur[l_row + l_ix], l_huCur[l_row + l_ix + 1],
-            l_b[l_row + l_ix], l_b[l_row + l_ix + 1], l_netUpdateL,
-            l_netUpdateR);
+            l_huCur[l_row + l_ix], l_huCur[l_row + l_ix + 1], l_b[l_row + l_ix],
+            l_b[l_row + l_ix + 1], l_netUpdateL, l_netUpdateR);
 
         l_eLh[l_ix] = l_netUpdateL[0];
         l_eLhu[l_ix] = l_netUpdateL[1];

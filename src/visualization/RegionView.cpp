@@ -230,8 +230,7 @@ void RegionView::computeDisplacementField(
   // Bathymetry-gradient (Tanioka & Satake 1996) correction needs the 2-D grid
   // structure to find neighbours; only available with a matching, structured
   // elevation grid (always true after a successful load()).
-  const bool l_hasElev =
-      m_elev.size() == l_n && gridW > 1 && gridH > 1;
+  const bool l_hasElev = m_elev.size() == l_n && gridW > 1 && gridH > 1;
 
   for (int j = 0; j < gridH; j++) {
     for (int i = 0; i < gridW; i++) {
