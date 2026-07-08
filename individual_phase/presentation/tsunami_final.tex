@@ -79,8 +79,7 @@
 
 % ------------------------- Metadaten ---------------------------------
 \title{Echtzeit-Tsunamis}
-\subtitle{Abschlusspräsentation --- Interaktive Visualisierung mit OpenGL}
-\author{Mika Brückner, Yannik Köllmann, Jan Vogt}
+\subtitle{Abschlusspräsentation: Interaktive Visualisierung mit OpenGL}
 \date{Juli 2026} % TODO: Vortragsdatum eintragen
 
 % =====================================================================
@@ -93,7 +92,6 @@
   {\color{teal}\rule{2.2cm}{2.5pt}}\\[0.7cm]
   {\Huge\bfseries Echtzeit-Tsunamis}\\[0.45cm]
   {\large\color{foam!85} Abschlusspräsentation \quad\textbullet\quad Interaktive Visualisierung mit OpenGL}\\[1.4cm]
-  {\color{foam!75}\small \insertauthor}\\[0.35cm]
   {\color{foam!55}\footnotesize Tsunami Lab \quad\textbullet\quad \insertdate}
     \end{frame}
 
@@ -156,34 +154,33 @@
         \journeymap{ston}{ston}{ston}{ston}{ston}
         \\[1.0cm]
         {\large Ein Klick wird zur Verwerfung, die Verwerfung zur Welle,\\
-        die Welle zum Bild --- \textcolor{teal}{in Echtzeit}.}\\[0.6cm]
-        {\color{foam!60}\small Quelle: Mika \quad\textbullet\quad Welle \& Bild: Yannik \quad\textbullet\quad Live: alle}
+        die Welle zum Bild, \textcolor{teal}{in Echtzeit}.}
     \end{frame}
 
 % ======================================================================
 % MIKA | Klick -> Quelle (~4 min)
 % ======================================================================
-    \divider{ston}{ston}{stoff}{stoff}{stoff}{Vom Klick zur Quelle}{Mika --- Okada-Modell \& Parameterbestimmung}
+    \divider{ston}{ston}{stoff}{stoff}{stoff}{Vom Klick zur Quelle}{Okada-Modell \& Parameterbestimmung}
 
 % ---------- 1 Zahl -> 9 Parameter --------------------------------------
     \begin{frame}{Eine Magnitude $\rightarrow$ neun Parameter}
-        \vspace{0.35cm}
+        \vspace{0.15cm}
         \centering
         \begin{tikzpicture}[
             quelle/.style={draw=teal, line width=1pt, rounded corners,
             fill=ocean!25, text=black, align=center, font=\footnotesize,
-            minimum width=3.4cm, minimum height=1.2cm},
+            minimum width=3.4cm, minimum height=1.0cm},
             annahme/.style={draw=foam!45, line width=1pt, rounded corners,
             fill=foam!12, text=black, align=center, font=\footnotesize,
-            minimum width=3.4cm, minimum height=1.2cm},
+            minimum width=3.4cm, minimum height=1.0cm},
             ziel/.style={draw=amber, line width=1.2pt, rounded corners,
             fill=amber!25, text=black, align=center, font=\small,
             minimum width=3.3cm, minimum height=2.2cm},
             pfeil/.style={-{Stealth}, teal, line width=1.2pt}]
     \node[quelle] (user) {\textbf{Nutzer}\\Klick + Magnitude $M_w$};
-    \node[quelle, below=0.32cm of user] (slab) {\textbf{Slab2} (USGS)\\Tiefe, Streichen, Einfallen};
-    \node[quelle, below=0.32cm of slab] (skal) {\textbf{Strasser 2010}\\Länge, Breite, Versatz};
-    \node[annahme, below=0.32cm of skal] (fest) {\textbf{Feste Annahmen}\\Rake $90^\circ$, $\nu = 0{,}25$};
+    \node[quelle, below=0.25cm of user] (slab) {\textbf{Slab2} (USGS)\\Tiefe, Streichen, Einfallen};
+    \node[quelle, below=0.25cm of slab] (skal) {\textbf{Strasser 2010}\\Länge, Breite, Versatz};
+    \node[annahme, below=0.25cm of skal] (fest) {\textbf{Feste Annahmen}\\Rake $90^\circ$, $\nu = 0{,}25$};
     \node[ziel, right=2.4cm of slab.east, yshift=-0.8cm] (okada)
     {\textbf{Okada}\\1985 / 1992\\[0.15cm]\footnotesize Verformung des\\Meeresbodens};
     \draw[pfeil] (user.east) -- (okada.west|-user.east) -- (okada);
@@ -192,8 +189,8 @@
     \draw[pfeil] (fest.east) -- (okada.west|-fest.east) -- (okada);
         \end{tikzpicture}
         \\[0.35cm]
-        {\small Slab2 ist zugleich \textcolor{teal}{Plausibilitätsfilter} ---
-        außerhalb von Subduktionszonen: Fallback Wells \& Coppersmith 1994.}
+        {\small Slab2 ist zugleich \textcolor{teal}{Plausibilitätsfilter}.
+        Außerhalb von Subduktionszonen greift der Fallback Wells \& Coppersmith 1994.}
     \end{frame}
 
 % ---------- Okada-Feld ---------------------------------------------------
@@ -210,13 +207,24 @@
     .. controls (3.6,2.2) and (3.4,2.95) .. (4.4,2.95)
     .. controls (5.4,2.95) and (5.2,1.75) .. (6.6,1.75)
     .. controls (7.6,1.75) and (7.6,2.2) .. (8.6,2.2) -- (11.2,2.2);
-    % Hebungs-/Senkungsflaechen
-    \fill[amber!55, opacity=0.75]
-    (2.6,2.2) .. controls (3.6,2.2) and (3.4,2.95) .. (4.4,2.95)
-    .. controls (5.0,2.95) and (5.05,2.5) .. (5.35,2.2) -- cycle;
-    \fill[ocean!70, opacity=0.9]
-    (5.35,2.2) .. controls (5.6,1.85) and (5.9,1.75) .. (6.6,1.75)
-    .. controls (7.6,1.75) and (7.6,2.2) .. (8.6,2.2) -- cycle;
+    % Hebungs-/Senkungsflaechen: exakt dieselbe Kontur wie die Bodenlinie,
+    % per Clip farblich getrennt (kein Versatz an der Nahtstelle)
+    \begin{scope}
+        \clip (0,2.2) rectangle (11.2,3.9);
+        \fill[amber!55, opacity=0.75]
+        (0,2.2) -- (2.6,2.2)
+        .. controls (3.6,2.2) and (3.4,2.95) .. (4.4,2.95)
+        .. controls (5.4,2.95) and (5.2,1.75) .. (6.6,1.75)
+        .. controls (7.6,1.75) and (7.6,2.2) .. (8.6,2.2) -- (11.2,2.2) -- cycle;
+    \end{scope}
+    \begin{scope}
+        \clip (0,0.5) rectangle (11.2,2.2);
+        \fill[ocean!70, opacity=0.9]
+        (0,2.2) -- (2.6,2.2)
+        .. controls (3.6,2.2) and (3.4,2.95) .. (4.4,2.95)
+        .. controls (5.4,2.95) and (5.2,1.75) .. (6.6,1.75)
+        .. controls (7.6,1.75) and (7.6,2.2) .. (8.6,2.2) -- (11.2,2.2) -- cycle;
+    \end{scope}
     \node[black, font=\footnotesize\bfseries] at (4.1,2.55) {Hebung};
     \node[foam, font=\footnotesize\bfseries] at (6.9,2.0) {Senkung};
     % Wasseroberflaeche: folgt der Bodenverformung (gestrichelt, abgeschwaecht)
@@ -238,8 +246,6 @@
         {Verwerfung, Versatz $U$\\[-2pt]{\color{foam!70}(9 Parameter)}};
         \end{tikzpicture}
         \\[0.3cm]
-        {\small\color{foam!85} Geschlossene Formel, keine FEM ---
-        \textcolor{teal}{konstante Zeit pro Gitterzelle}.}\\[0.15cm]
         {\small validiert gegen \texttt{okada85.m} (IPGP):
         \textbf{81 Fälle}, max.\ Abweichung $\sim 5\cdot10^{-11}$}
     \end{frame}
@@ -264,22 +270,19 @@
     % fester Punkt auf der Flanke: Boden steigt
     \draw[-{Stealth}, teal, line width=2pt] (5.5,1.83) -- (5.5,2.62);
     \node[teal, font=\small\bfseries, anchor=west] at (5.75,3.0) {wirkt wie Hebung};
-    % Erklaerung links ueber dem tiefen Wasser
-    \node[black!75, font=\footnotesize, align=center] at (2.5,2.6)
-        {an steiler Flanke schiebt sich\\höherer Boden unter denselben Punkt};
         \end{tikzpicture}
         \\[0.25cm]
         {\large $u_z^{\text{eff}} = u_z - \bigl(u_x\,\tfrac{\partial b}{\partial x}
         + u_y\,\tfrac{\partial b}{\partial y}\bigr)$}\\[0.25cm]
-        {\small Tohoku \& Chile liegen direkt an einer Tiefseerinne ---
-        deshalb eingebaut, in \textcolor{teal}{Vorschau und Live-Simulation}.}
+        {\small Tohoku \& Chile liegen direkt an einer Tiefseerinne,
+        deshalb eingebaut in \textcolor{teal}{Vorschau und Live-Simulation}.}
     \end{frame}
 
 % ---------- Grenzen ------------------------------------------------------
     \begin{frame}{Ehrlich eingeordnet}
         \vspace{0.5cm}
         \centering
-        {\large Seit 1900: nur \textbf{fünf} Beben mit $M_w \ge 9$ ---\\
+        {\large Seit 1900: nur \textbf{fünf} Beben mit $M_w \ge 9$,\\
         dort kann kein Skalierungsgesetz präzise sein.}\\[0.7cm]
         \begin{columns}[T]
             \begin{column}{0.44\textwidth}
@@ -302,7 +305,7 @@
 % ======================================================================
 % YANNIK | Quelle -> Welle -> Bild (~4,5 min)
 % ======================================================================
-    \divider{stoff}{stoff}{ston}{ston}{stoff}{Von der Quelle aufs Display}{Yannik --- Live-Simulation \& Performance}
+    \divider{stoff}{stoff}{ston}{ston}{stoff}{Von der Quelle aufs Display}{Live-Simulation \& Performance}
 
 % ---------- Threads ------------------------------------------------------
     \begin{frame}{Drei Arten von Threads, ein Ozean}
@@ -316,8 +319,8 @@
             fill=amber!25, text=black, align=center, font=\normalsize,
             minimum width=3.0cm, minimum height=1.8cm},
             pfeil/.style={-{Stealth}, teal, line width=1.6pt}]
-    \node[block] (gui) {GUI / Render\\{\footnotesize 60 FPS}};
-    \node[buf, right=1.7cm of gui] (buf) {SimBuffer\\{\footnotesize Doppelpuffer}};
+    \node[block] (gui) {GUI / Render};
+    \node[buf, right=1.7cm of gui] (buf) {SimBuffer\\{\footnotesize Double Buffer}};
     \node[block, right=1.7cm of buf] (solver) {SolverThread\\{\footnotesize CFL $\rightarrow$ timeStep}};
     \node[block, below=0.7cm of solver, minimum height=1.1cm]
     (omp) {OpenMP-Pool {\footnotesize(P-Cores)}};
@@ -326,7 +329,7 @@
     \draw[pfeil, transform canvas={xshift=-2.5mm}] (solver) -- (omp);
     \draw[pfeil, transform canvas={xshift=2.5mm}] (omp) -- (solver);
     \node[coral, font=\small, align=center] at (2.9,-1.95)
-        {\texttt{try\_lock}: im Konfliktfall fliegt der Frame weg ---\\
+        {\texttt{try\_lock}: im Konfliktfall fliegt der Frame weg,\\
     \textbf{nie} der Solver in die Warteschleife};
         \end{tikzpicture}
         \\[0.5cm]
@@ -337,7 +340,7 @@
     \begin{frame}{Früher: rechnen, schreiben, warten}
         \vspace{0.3cm}
         \centering
-        {\small Gleiche Simulation, $10^6$ Zellen, 793 Zeitschritte, 10 Threads (M4) ---
+        {\small Gleiche Simulation, $10^6$ Zellen, 793 Zeitschritte, 10 Threads (M4),
         Gesamtlaufzeit:}\\[0.5cm]
         \begin{tikzpicture}[yscale=0.86]
             % Balken: 0.96 s / 1.10 s / 8.9 s  -> Breite = s * 1.15 cm
@@ -348,14 +351,14 @@
             \node[foam, anchor=west, font=\small\bfseries] at (1.5,1.65) {1{,}1 s};
             \node[black, anchor=east, font=\small\bfseries] at (10.05,0.25) {8{,}9 s};
             \node[foam, anchor=west, font=\small] at (0.1,3.30)
-                {\textbf{Live-Pfad} --- Frames in den Puffer, keine Dateien};
+                {\textbf{Live-Pfad}: Frames in den Buffer, keine Dateien};
             \node[foam, anchor=west, font=\small] at (0.1,2.10)
                 {NetCDF-Snapshots alle 25 Schritte \quad {\color{foam!60}371 MB}};
             \node[foam, anchor=west, font=\small] at (0.1,0.70)
                 {NetCDF \textbf{jeden} Schritt (= „live'` über Dateien) \quad {\color{coral}8{,}9 GB}};
         \end{tikzpicture}
         \\[0.5cm]
-        {\large Live über Dateien wäre $\sim$\textcolor{coral}{9$\times$ langsamer} ---
+        {\large Live über Dateien wäre $\sim$\textcolor{coral}{9$\times$ langsamer},
             $\sim$90\,\% der Zeit wäre Schreiben.}
     \end{frame}
 
@@ -382,9 +385,9 @@
             }
             % Beschriftung unten
             \node[amber, font=\footnotesize, align=center] at (1.55,-0.85)
-                {\textbf{1 Kern}, fest gepinnt ---\\Bild bleibt flüssig};
+                {\textbf{1 Kern}, fest gepinnt,\\Bild bleibt flüssig};
             \node[teal, font=\footnotesize, align=center] at (7.4,-0.85)
-                {\textbf{die übrigen Performance-Kerne} ---\\ein Solver-Thread pro Kern, ungestört};
+                {\textbf{die übrigen Performance-Kerne},\\ein Solver-Thread pro Kern, ungestört};
         \end{tikzpicture}
         \\[0.6cm]
         {\large Solver und Bild kommen sich \textcolor{teal}{nie in die Quere}.}
@@ -400,7 +403,7 @@
   \vspace{1.5cm}
   \journeymap{stoff}{stoff}{stoff}{stoff}{ston}
   \\[0.9cm]
-  {\LARGE\bfseries Der Ozean reagiert --- jetzt.}\\[0.8cm]
+  {\LARGE\bfseries Der Ozean reagiert: jetzt.}\\[0.8cm]
   {\color{foam!70}\small Tohoku laden \; $\rightarrow$ \; Okada-Feld prüfen \;
       $\rightarrow$ \; Simulation live \; $\rightarrow$ \; freier Klick}
     \end{frame}
@@ -411,7 +414,7 @@
   \vspace{2.2cm}
   {\LARGE\bfseries Kein Video. Keine Aufzeichnung.\\[0.25cm]
   Ein Klick. Der \textcolor{teal}{Ozean reagiert}.}\\[1.2cm]
-  {\color{foam!75} Versprochen am 18.\ Juni --- gezeigt heute.}\\[1.6cm]
+  {\color{foam!75} Versprochen am 18.\ Juni, gezeigt heute.}\\[1.6cm]
   {\color{foam!55}\small Fragen?}
     \end{frame}
 
