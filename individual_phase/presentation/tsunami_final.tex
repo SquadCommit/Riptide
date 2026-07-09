@@ -321,7 +321,7 @@
             pfeil/.style={-{Stealth}, teal, line width=1.6pt}]
     \node[block] (gui) {GUI / Render};
     \node[buf, right=1.7cm of gui] (buf) {SimBuffer\\{\footnotesize Double Buffer}};
-    \node[block, right=1.7cm of buf] (solver) {SolverThread\\{\footnotesize CFL $\rightarrow$ timeStep}};
+    \node[block, right=1.7cm of buf] (solver) {SolverThread\\{\footnotesize adaptiver Zeitschritt}};
     \node[block, below=0.7cm of solver, minimum height=1.1cm]
     (omp) {OpenMP-Pool {\footnotesize(P-Cores)}};
     \draw[pfeil] (buf) -- node[above, midway, foam!85, font=\small]{front} (gui);
@@ -340,7 +340,7 @@
     \begin{frame}{Früher: rechnen, schreiben, warten}
         \vspace{0.3cm}
         \centering
-        {\small Gleiche Simulation, $10^6$ Zellen, 793 Zeitschritte, 10 Threads (M4),
+        {\small Gleiche Simulation, $10^6$ Zellen, 800 Zeitschritte, 10 Threads (M4),
         Gesamtlaufzeit:}\\[0.5cm]
         \begin{tikzpicture}[yscale=0.86]
             % Balken: 0.96 s / 1.10 s / 8.9 s  -> Breite = s * 1.15 cm
@@ -387,7 +387,7 @@
             \node[amber, font=\footnotesize, align=center] at (1.55,-0.85)
                 {\textbf{1 Kern}, fest gepinnt,\\Bild bleibt flüssig};
             \node[teal, font=\footnotesize, align=center] at (7.4,-0.85)
-                {\textbf{die übrigen Performance-Kerne},\\ein Solver-Thread pro Kern, ungestört};
+                {\textbf{die übrigen Performance-Kerne},\\ein OpenMP-Thread pro Kern, ungestört};
         \end{tikzpicture}
         \\[0.6cm]
         {\large Solver und Bild kommen sich \textcolor{teal}{nie in die Quere}.}
