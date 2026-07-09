@@ -78,7 +78,7 @@
     \end{frame}}
 
 % ------------------------- Metadaten ---------------------------------
-\title{Echtzeit-Tsunamis}
+\title{Echtzeit-Tsunamiss}
 \subtitle{Abschlusspräsentation: Interaktive Visualisierung mit OpenGL}
 \date{Juli 2026} % TODO: Vortragsdatum eintragen
 
@@ -205,6 +205,36 @@
         Außerhalb von Subduktionszonen greift der Fallback Wells \& Coppersmith 1994.}
     \end{frame}
 
+% ---------- Strasser vs. Wells & Coppersmith ----------------------------
+    \begin{frame}{Zwei Skalierungsgesetze, ein Erdbeben}
+        \vspace{0.2cm}
+        \begin{columns}[T]
+            \begin{column}{0.48\textwidth}
+                \raggedright
+                {\color{coral}\bfseries\large Wells \& Coppersmith 1994}
+                \vspace{0.35cm}
+
+                \small
+                {\color{coral}\textbullet}~Kalibriert auf krustale Beben (Blatt-, Auf-, Abschiebung)\\[0.22cm]
+                {\color{coral}\textbullet}~Bis $M_w\!\sim\!8{,}1$ -- schlie{\ss}t Interface-Beben aus\\[0.22cm]
+                {\color{coral}\textbullet}~Rolle: \textbf{Fallback} au{\ss}erhalb Slab2\\[0.5cm]
+            \end{column}
+            \begin{column}{0.48\textwidth}
+                \raggedright
+                {\color{teal}\bfseries\large Strasser et al.\ 2010}
+                \vspace{0.35cm}
+
+                \small
+                {\color{teal}\textbullet}~Kalibriert speziell auf Subduktions-Interface-Beben\\[0.22cm]
+                {\color{teal}\textbullet}~Slip momentenkonsistent statt regressiert: $D=M_0/(\mu LW)$\\[0.22cm]
+                {\color{teal}\textbullet}~Rolle: genutzt \textbf{innerhalb} Slab2-Abdeckung
+            \end{column}
+        \end{columns}
+        \vspace{0.5cm}
+        \centering
+
+    \end{frame}
+
 % ---------- Okada-Feld ---------------------------------------------------
     \begin{frame}{Was der Meeresboden tut}
         \vspace{0.2cm}
@@ -264,7 +294,7 @@
 
 % ---------- Tanioka & Satake --------------------------------------------
     \begin{frame}{Der Trench-Effekt (Tanioka \& Satake 1996)}
-        \vspace{0.2cm}
+        \vspace{0.05cm}
         \centering
         \begin{tikzpicture}[scale=1.0]
     \useasboundingbox (-0.3,-0.2) rectangle (11.4,3.7);
@@ -283,33 +313,30 @@
     \draw[-{Stealth}, teal, line width=2pt] (5.5,1.83) -- (5.5,2.62);
     \node[teal, font=\small\bfseries, anchor=west] at (5.75,3.0) {wirkt wie Hebung};
         \end{tikzpicture}
-        \\[0.25cm]
+        \\[0.15cm]
         {\large $u_z^{\text{eff}} = u_z - \bigl(u_x\,\tfrac{\partial b}{\partial x}
-        + u_y\,\tfrac{\partial b}{\partial y}\bigr)$}\\[0.25cm]
-        {\small Tohoku \& Chile liegen direkt an einer Tiefseerinne,
-        deshalb eingebaut in \textcolor{teal}{Vorschau und Live-Simulation}.}
+        + u_y\,\tfrac{\partial b}{\partial y}\bigr)$}\\[0.15cm]
+        {\small Tohoku \& Chile liegen an einer Tiefseerinne, deshalb eingebaut in
+        \textcolor{teal}{Vorschau \& Live-Simulation} -- $u_x/u_y$ ebenso validiert
+        gegen \texttt{okada85.m} ($\sim 5\cdot10^{-11}$).}
     \end{frame}
 
 % ---------- Grenzen ------------------------------------------------------
     \begin{frame}{Ehrlich eingeordnet}
-        \vspace{0.5cm}
         \centering
-        {\large Seit 1900: nur \textbf{fünf} Beben mit $M_w \ge 9$,\\
-        dort kann kein Skalierungsgesetz präzise sein.}\\[0.7cm]
+        {\large Seit 1900: nur \textbf{fünf} Beben mit $M_w \ge 9$ --
+        dort kann kein Skalierungsgesetz präzise sein.}\\[0.3cm]
+
         \begin{columns}[T]
             \begin{column}{0.44\textwidth}
                 \centering
-                {\color{teal}\Large\checkmark}\\[0.2cm]
-                {\color{teal}\textbf{Gut für}}\\[0.25cm]
-                {\small Ankunftszeit\\[0.1cm] Größenordnung der Welle\\[0.1cm]
-                Orientierung \& Lage der Quelle}
+                {\color{teal}\textbf{Chile ($M_w$ 8,8)}}\\[0.2cm]
+                {\small trifft mit $\sim$469 vs.\ $\sim$450 km sehr genau.}
             \end{column}
             \begin{column}{0.44\textwidth}
                 \centering
-                {\color{coral}\Large$\times$}\\[0.2cm]
-                {\color{coral}\textbf{Nicht für}}\\[0.25cm]
-                {\small exakte Pegel an einer Station\\[0.1cm] reale Slip-Verteilung\\[0.1cm]
-                geschichtete Erdkruste}
+                {\color{coral}\textbf{{Tohoku} ($M_w$ 9,1, extremer Rand):}}\\[0.2cm]
+                {\small Strasser überschätzt die Länge um $\sim$55\,\% (702 vs.\ $\sim$450 km)\\[0.1cm]}
             \end{column}
         \end{columns}
     \end{frame}
