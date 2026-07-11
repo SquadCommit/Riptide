@@ -239,7 +239,8 @@ inline void drawGridWindowBanded(int i_w,
                                  int i_numLevels,
                                  int i_viewportPx,
                                  int i_maxBands,
-                                 BindLevelFn i_bindLevel) {
+                                 BindLevelFn i_bindLevel,
+                                 int i_minLevel = 0) {
   int l_iS[8], l_iE[8], l_jS[8], l_jE[8];
   i_maxBands = std::min(i_maxBands, 8);
   const int l_ni = splitBands(i_i0, i_i1, i_maxBands, l_iS, l_iE);
@@ -253,8 +254,11 @@ inline void drawGridWindowBanded(int i_w,
                                     (float)(l_iS[l_bi] + l_iE[l_bi]) /
                                     (float)std::max(1, i_w - 1);
       const float l_dist = glm::length(i_camPos - glm::vec3(l_wx, 0.0f, l_wz));
+      // i_minLevel: coarsest levels may be the only ones with resident index
+      // buffers (large grids skip over-budget uploads; see the view classes).
       const int l_level =
-          pickLevel(i_cellWorld, i_numLevels, l_dist, i_viewportPx);
+          std::max(i_minLevel,
+                   pickLevel(i_cellWorld, i_numLevels, l_dist, i_viewportPx));
       i_bindLevel(l_level);
       drawGridWindow(i_w, i_h, 1 << l_level, l_iS[l_bi], l_iE[l_bi], l_jS[l_bj],
                      l_jE[l_bj]);

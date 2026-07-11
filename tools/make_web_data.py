@@ -29,7 +29,7 @@ GEBCO = os.path.join(ROOT, "data", "GEBCO_2026.nc")
 OUT = os.path.join(ROOT, "web", "public", "data")
 
 GLOBE_LON_SAMPLES = 4320  # ~0.083 deg; ~18 MB raw, fine as a one-time fetch
-REGION_MAX_DIM = 1200     # matches the sim-setup crop in AppWeb.cpp
+REGION_MAX_DIM = 2500     # native 15-arcsec for 10-deg scenarios; sim crops to <=2048
 
 # Keep in sync with src/visualization/Scenario.h (k_scenarios).
 SCENARIOS = [
@@ -42,19 +42,22 @@ SCENARIOS = [
 
 
 def write_grid(path, elev, lon, lat):
-    """elev: 2D int16 array (rows = lat), lon/lat: 1D coordinate arrays."""
+    """elev: 2D int16 array (rows = lat), lon/lat: 1D coordinate arrays.
+    Written gzip-compressed (.gz suffix); the frontend inflates via
+    DecompressionStream."""
+    import gzip
     if lat[0] > lat[-1]:  # ensure row 0 = south
         lat = lat[::-1]
         elev = elev[::-1, :]
     h, w = elev.shape
-    with open(path, "wb") as f:
+    with gzip.open(path, "wb", compresslevel=6) as f:
         f.write(b"TLB1")
         f.write(struct.pack("<ii", w, h))
         f.write(struct.pack("<dddd", float(lon[0]), float(lon[-1]),
                             float(lat[0]), float(lat[-1])))
         f.write(np.ascontiguousarray(elev, dtype="<i2").tobytes())
     print(f"  {os.path.relpath(path, ROOT)}: {w}x{h}, "
-          f"{os.path.getsize(path) / 1e6:.1f} MB")
+          f"{os.path.getsize(path) / 1e6:.1f} MB gz")
 
 
 def extract(nc, lon_min, lon_max, lat_min, lat_max, max_dim):
@@ -155,12 +158,12 @@ def main():
     print("Welt-Gitter ...")
     elev, lon, lat = extract(nc, -180.0, 180.0, -90.0, 90.0,
                              GLOBE_LON_SAMPLES)
-    write_grid(os.path.join(OUT, "globe.bin"), elev, lon, lat)
+    write_grid(os.path.join(OUT, "globe.bin.gz"), elev, lon, lat)
 
     for i, (name, lon0, lon1, lat0, lat1) in enumerate(SCENARIOS):
         print(f"Szenario {i} ({name}) ...")
         elev, lon, lat = extract(nc, lon0, lon1, lat0, lat1, REGION_MAX_DIM)
-        write_grid(os.path.join(OUT, f"scenario_{i}.bin"), elev, lon, lat)
+        write_grid(os.path.join(OUT, f"scenario_{i}.bin.gz"), elev, lon, lat)
 
     nc.close()
 

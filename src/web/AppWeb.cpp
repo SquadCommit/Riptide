@@ -303,7 +303,7 @@ static bool buildSimSetup(tsunami_lab::t_idx& o_nx,
     return false;
 
   gv::gebco::Region l_src;
-  if (!gv::gebco::readRegion("web", g_loadedSel, l_src, 1200) || l_src.w < 2 ||
+  if (!gv::gebco::readRegion("web", g_loadedSel, l_src, 2048) || l_src.w < 2 ||
       l_src.h < 2)
     return false;
 

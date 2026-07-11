@@ -114,6 +114,7 @@ private:
   GLuint m_ebos[k_maxLod] = {};
   GLsizei m_idxCnts[k_maxLod] = {};
   int m_numLods = 0;
+  int m_minLod = 0;         // finest level with a resident index buffer
   float m_cellWorld = 0.0f; // world-unit size of one grid cell
   // World XZ coords of the grid's first/last vertex and the elevation range,
   // for frustum culling of off-screen grid rows/columns in draw().
@@ -151,6 +152,7 @@ private:
   GLuint m_waterVbH = 0;
   GLuint m_waterEbos[k_maxLod] = {};
   GLsizei m_waterIdxCnts[k_maxLod] = {};
+  int m_waterMinLod = 0; // finest water level with a resident index buffer
   int m_waterNumLods = 0;
   float m_waterCellWorld = 0.0f;
   t_idx m_simNx = 0;

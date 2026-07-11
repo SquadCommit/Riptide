@@ -99,14 +99,14 @@ if(EMSCRIPTEN)
   target_compile_options(tsunami_web PRIVATE -pthread)
   target_link_options(tsunami_web PRIVATE
     -pthread
-    "SHELL:-s PTHREAD_POOL_SIZE=8"
+    "SHELL:-s PTHREAD_POOL_SIZE=16"
     "SHELL:-s USE_WEBGL2=1"
     "SHELL:-s MIN_WEBGL_VERSION=2"
     "SHELL:-s MAX_WEBGL_VERSION=2"
     # Fixed-size heap: growth + pthreads left the GL bindings with stale heap
     # views mid-boot (every glBufferData during a growth burst failed with
     # INVALID_VALUE), and a fixed heap is the recommended pthreads setup anyway.
-    "SHELL:-s INITIAL_MEMORY=1073741824"
+    "SHELL:-s INITIAL_MEMORY=1610612736"
     "SHELL:-s STACK_SIZE=1048576"
     "SHELL:-s MODULARIZE=1"
     "SHELL:-s EXPORT_NAME=createTsunamiModule"

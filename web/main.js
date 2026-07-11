@@ -36,7 +36,7 @@ function canvasSize() {
 
 async function boot() {
   mod = await createTsunamiModule();
-  const globe = await fetchBytes("public/data/globe.bin", "Welt-Bathymetrie …");
+  const globe = await fetchBytes("public/data/globe.bin.gz", "Welt-Bathymetrie …");
   $("load-detail").textContent = "Starte Renderer …";
   const [w, h] = canvasSize();
   const ok = heapCall(globe, (p, n) => mod.boot(p, n, w, h, devicePixelRatio));
@@ -82,7 +82,7 @@ function buildScenarioButtons() {
     b.onclick = async () => {
       b.disabled = true;
       try {
-        const bytes = await fetchBytes(`public/data/scenario_${i}.bin`, "");
+        const bytes = await fetchBytes(`public/data/scenario_${i}.bin.gz`, "");
         heapCall(bytes, (p, n) => mod.loadScenarioBytes(i, p, n));
       } finally {
         b.disabled = false;
