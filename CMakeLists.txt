@@ -90,10 +90,11 @@ if(EMSCRIPTEN)
     src/visualization/SolverThread.cpp
     src/patches/WavePropagation2d/WavePropagation2d.cpp
     src/displacement/OkadaDisplacement.cpp
+    src/io/Slab2Query.cpp
+    src/web/Slab2Web.cpp
   )
   target_include_directories(tsunami_web PRIVATE src submodules/glm)
   target_compile_definitions(tsunami_web PRIVATE
-    TSUNAMI_NO_SLAB2               # Slab2 grids are not ported to the web yet
     SHADER_DIR="/shaders")         # virtual FS path of the embedded shaders
   target_compile_options(tsunami_web PRIVATE -pthread)
   target_link_options(tsunami_web PRIVATE
@@ -160,6 +161,7 @@ add_library(solver_lib STATIC
   src/io/csv/Csv.cpp
   src/io/stations/Stations.cpp
   src/io/Slab2Reader.cpp
+  src/io/Slab2Query.cpp
 )
 target_include_directories(solver_lib PUBLIC src ${NETCDF_INCLUDE})
 target_link_directories(solver_lib PUBLIC ${NETCDF_LIBDIR})

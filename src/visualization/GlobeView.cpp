@@ -1,9 +1,7 @@
 #include "GlobeView.h"
 
 #include "Gebco.h"
-#ifndef TSUNAMI_NO_SLAB2
 #include "io/Slab2Reader.h"
-#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -58,7 +56,6 @@ GlobeView::~GlobeView() {
     glDeleteTextures(1, &m_slabTex);
 }
 
-#ifndef TSUNAMI_NO_SLAB2
 // Inline shaders for the subduction-zone overlay: a world-spanning quad in
 // (lon, lat) over the flat map, textured with the depth-graded Slab2 coverage.
 static const char* k_slabVert = R"(#version 330 core
@@ -156,8 +153,6 @@ void GlobeView::buildSlab2Overlay(const io::Slab2Reader& i_slab2) {
 
   m_hasSlabOverlay = true;
 }
-
-#endif // TSUNAMI_NO_SLAB2
 
 void GlobeView::loadGebco(const char* i_path, int i_lonSamples) {
   // Globally subsample the elevation source so the longitude axis holds

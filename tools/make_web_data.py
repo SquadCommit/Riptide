@@ -70,6 +70,82 @@ def extract(nc, lon_min, lon_max, lat_min, lat_max, max_dim):
     return elev.astype(np.int16), lon[i0:i1:stride], lat[j0:j1:stride]
 
 
+# Keep in sync with k_regionNames in src/io/Slab2Reader.cpp.
+SLAB2_REGIONS = {
+    "alu": "Aleuten & Alaska", "cal": "Kalabrien", "cam": "Mittelamerika",
+    "car": "Kleine Antillen", "cas": "Cascadia", "cot": "Cotabato",
+    "hal": "Halmahera", "hel": "Hellenischer Bogen", "him": "Himalaya",
+    "hin": "Hindukusch", "izu": "Izu-Bonin-Marianen", "ker": "Tonga-Kermadec",
+    "kur": "Kurilen-Kamtschatka-Japan", "mak": "Makran",
+    "man": "Manila-Graben", "mue": "Muertos-Graben", "pam": "Pamir",
+    "phi": "Philippinen", "png": "Neuguinea", "puy": "Puysegur",
+    "ryu": "Ryukyu-Nankai", "sam": "Südamerika (Anden)",
+    "sco": "Scotia (Südsandwich)", "sol": "Salomonen", "sul": "Sulawesi",
+    "sum": "Sumatra-Java", "van": "Vanuatu",
+}
+
+
+def read_grd(path):
+    """GMT .grd: axes x/y (or lon/lat), values in variable 'z'."""
+    ds = Dataset(path, "r")
+    v = ds.variables
+    x = v["x"][:] if "x" in v else v["lon"][:]
+    y = v["y"][:] if "y" in v else v["lat"][:]
+    z = np.ma.filled(v["z"][:].astype(np.float64), np.nan)
+    ds.close()
+    return np.asarray(x, dtype=np.float64), np.asarray(y, np.float64), z
+
+
+def quantise(a, scale):
+    """float → int16 in 1/scale units; NaN → -32768 (nodata)."""
+    q = np.full(a.shape, -32768, dtype=np.int16)
+    m = ~np.isnan(a)
+    q[m] = np.clip(np.round(a[m] * scale), -32767, 32767).astype(np.int16)
+    return q
+
+
+def write_slab2():
+    """Bundles all local Slab2 region grids into slab2.bin.gz (TLS2 format,
+    see src/web/Slab2Web.h)."""
+    import gzip
+    import io as _io
+
+    buf = _io.BytesIO()
+    regions = []
+    for code, name in sorted(SLAB2_REGIONS.items()):
+        paths = {q: os.path.join(ROOT, "data", f"{code}_slab2_{q}.grd")
+                 for q in ("dep", "str", "dip")}
+        if not all(os.path.exists(p) for p in paths.values()):
+            print(f"  {code}: Grids fehlen — übersprungen")
+            continue
+        x, y, dep = read_grd(paths["dep"])
+        _, _, s = read_grd(paths["str"])
+        _, _, d = read_grd(paths["dip"])
+        if s.shape != dep.shape or d.shape != dep.shape:
+            print(f"  {code}: Grid-Größen passen nicht — übersprungen")
+            continue
+        ny, nx = dep.shape
+        nb = name.encode("utf-8")
+        buf.write(struct.pack("<B", len(nb)))
+        buf.write(nb)
+        buf.write(struct.pack("<dddd", float(x[0]), float(y[0]),
+                              float(x[1] - x[0]), float(y[1] - y[0])))
+        buf.write(struct.pack("<ii", nx, ny))
+        # dep: .grd is km negative-down → store 100-m units positive-down
+        buf.write(quantise(-dep * 10.0, 1.0).tobytes())
+        buf.write(quantise(s, 10.0).tobytes())
+        buf.write(quantise(d, 10.0).tobytes())
+        regions.append(code)
+
+    out = os.path.join(OUT, "slab2.bin.gz")
+    payload = b"TLS2" + struct.pack("<i", len(regions)) + buf.getvalue()
+    with gzip.open(out, "wb", compresslevel=9) as f:
+        f.write(payload)
+    print(f"  {os.path.relpath(out, ROOT)}: {len(regions)} Regionen, "
+          f"{len(payload) / 1e6:.1f} MB roh → "
+          f"{os.path.getsize(out) / 1e6:.1f} MB gz")
+
+
 def main():
     if not os.path.exists(GEBCO):
         sys.exit(f"GEBCO-Datei nicht gefunden: {GEBCO}")
@@ -87,6 +163,9 @@ def main():
         write_grid(os.path.join(OUT, f"scenario_{i}.bin"), elev, lon, lat)
 
     nc.close()
+
+    print("Slab2-Subduktionszonen ...")
+    write_slab2()
     print("Fertig.")
 
 

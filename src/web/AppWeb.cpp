@@ -5,14 +5,12 @@
 // itself lives in JS/React: state flows out through getState() (embind),
 // actions flow in through the exported functions at the bottom. Only canvas
 // input (drag/zoom/click) is handled here, via the HTML5 event callbacks.
-//
-// TODO(slab2-web): the Slab2 subduction grids are not ported yet, so fault
-// depth/strike/dip use fixed fallback values and quakes can be placed
-// anywhere in water (see buildDisplacementModel).
 
 #include "displacement/OkadaDisplacement.h"
+#include "displacement/OkadaFactory.h"
 #include "displacement/SubductionScaling.h"
 #include "displacement/WellsCoppersmith.h"
+#include "io/Slab2Reader.h"
 #include "visualization/Camera.h"
 #include "visualization/Gebco.h"
 #include "visualization/GlobeView.h"
@@ -20,6 +18,7 @@
 #include "visualization/Scenario.h"
 #include "visualization/SimBuffer.h"
 #include "visualization/SolverThread.h"
+#include "web/Slab2Web.h"
 #include "web/WebData.h"
 
 #include <GLES3/gl3.h>
@@ -64,12 +63,22 @@ static bool g_mouseMiddle = false;
 static double g_lastX = 0, g_lastY = 0;
 static int g_screenW = 1280, g_screenH = 720; // CSS px (unprojection)
 static double g_dpr = 1.0;                    // device pixel ratio
+// Distinguishes a click (zone suggestion / epicentre) from a drag.
+static double g_pressX = 0, g_pressY = 0;
 static float g_dragDist = 0.0f;
 // Keys currently held (WASD/arrow pan), set by the key callbacks.
 static bool g_keyL = false, g_keyR = false, g_keyU = false, g_keyD = false;
 
-// Earthquake source: click location + moment magnitude; geometry derived via
-// scaling laws. Fixed fallback orientation until Slab2 is ported to the web.
+// Slab2 subduction geometry (fetched as a pre-converted bundle at boot;
+// null until then -> fallback parameters).
+static std::unique_ptr<tsunami_lab::io::Slab2Reader> g_slab2;
+// When true, an earthquake can only be triggered inside Slab2 coverage.
+static bool g_restrictToSlab2 = true;
+// Slab2 sample at the current click (or fallback); valid == false -> no
+// coverage.
+static tsunami_lab::io::Slab2Point g_slabPt = {0.0, 0.0, 0.0, false, nullptr};
+
+// Earthquake source: click location + moment magnitude.
 static float g_mw = 8.0f;
 static double g_epiLon = 0, g_epiLat = 0;
 static float g_epiWorldX = 0.0f;
@@ -180,13 +189,24 @@ static void simGridFor(double i_widthM,
 
 // Earthquake displacement
 
-// Fault geometry from the magnitude. Historical scenarios are subduction
-// interface events, so the Strasser-et-al. interface scaling fits better
-// than the generic Wells & Coppersmith relation; orientation/depth are fixed
-// fallback values until Slab2 is available in the browser.
+// Builds the Okada displacement for the current magnitude and click location.
+// With the Slab2 bundle loaded, the factory supplies depth/strike/dip where
+// the slab is present. Outside coverage the result depends on
+// g_restrictToSlab2: restricted -> nullptr (no fault); unrestricted ->
+// fallback orientation/depth with Wells & Coppersmith geometry.
 static std::unique_ptr<disp::OkadaDisplacement> buildDisplacementModel() {
+  if (g_slab2) {
+    std::unique_ptr<disp::OkadaDisplacement> l_model =
+        disp::OkadaFactory::fromMagnitudeAndLocation(g_mw, g_epiLon, g_epiLat,
+                                                     *g_slab2, k_rake);
+    if (l_model)
+      return l_model; // inside Slab2 coverage
+    if (g_restrictToSlab2)
+      return nullptr; // outside coverage and restricted
+  }
+
   disp::WellsCoppersmith::FaultGeometry l_geo =
-      disp::SubductionScaling::fromMagnitude(g_mw);
+      disp::WellsCoppersmith::fromMagnitude(g_mw);
   return std::unique_ptr<disp::OkadaDisplacement>(new disp::OkadaDisplacement(
       k_fallbackStrike, k_fallbackDip, k_rake, l_geo.slip, l_geo.length,
       l_geo.width, k_fallbackDepth));
@@ -195,7 +215,10 @@ static std::unique_ptr<disp::OkadaDisplacement> buildDisplacementModel() {
 static void startDisplacementJob() {
   if (!g_hasClick || !g_regionView || g_dispComputing)
     return;
-  g_pendingModel = buildDisplacementModel();
+  std::unique_ptr<disp::OkadaDisplacement> l_model = buildDisplacementModel();
+  if (!l_model)
+    return; // outside Slab2 coverage (restricted)
+  g_pendingModel = std::move(l_model);
   g_dispComputing = true;
   g_dispDirty = false;
 
@@ -234,11 +257,36 @@ static void onRegionClick(float i_mx, float i_my) {
   g_epiWorldX = l_world.x;
   g_epiWorldZ = l_world.y;
   g_regionView->worldToLonLat(l_world.x, l_world.y, g_epiLon, g_epiLat);
+
+  if (g_slab2)
+    g_slabPt = g_slab2->query(g_epiLon, g_epiLat);
+  else
+    g_slabPt = {k_fallbackDepth, k_fallbackStrike, k_fallbackDip, true,
+                nullptr};
   g_hasClick = true;
 
   g_displModel.reset();
   g_regionView->clearDisplacement();
   startDisplacementJob();
+}
+
+// Selection rectangle proposed when the user clicks a subduction zone on the
+// world map: centred on the click, sized for a typical tsunami run and
+// clamped to the world bounds and the per-axis selection limit.
+static gv::BBox
+suggestSlabSelection(double i_lon, double i_lat, float i_maxSelDeg) {
+  const double l_lonSpan = std::min(12.0, (double)i_maxSelDeg);
+  const double l_latSpan = std::min(8.0, (double)i_maxSelDeg);
+  double l_lonMin = i_lon - 0.5 * l_lonSpan;
+  double l_latMin = i_lat - 0.5 * l_latSpan;
+  l_lonMin = std::min(std::max(l_lonMin, -180.0), 180.0 - l_lonSpan);
+  l_latMin = std::min(std::max(l_latMin, -90.0), 90.0 - l_latSpan);
+  gv::BBox l_b;
+  l_b.lonMin = (float)l_lonMin;
+  l_b.lonMax = (float)(l_lonMin + l_lonSpan);
+  l_b.latMin = (float)l_latMin;
+  l_b.latMax = (float)(l_latMin + l_latSpan);
+  return l_b;
 }
 
 // Live simulation setup (identical maths to the native app; the bathymetry
@@ -414,6 +462,8 @@ static bool loadRegionAndEnterPreview(const gv::BBox& i_sel) {
   }
   g_loadedSel = i_sel;
   g_state = AppState::REGION_PREVIEW;
+  if (g_slab2)
+    g_regionView->buildSlab2Overlay(*g_slab2);
   setCameraRegionView(g_camera);
   return true;
 }
@@ -434,6 +484,12 @@ static void triggerScenario(int i_idx) {
   g_epiLon = l_sc.epiLon;
   g_epiLat = l_sc.epiLat;
   g_regionView->lonLatToWorld(g_epiLon, g_epiLat, g_epiWorldX, g_epiWorldZ);
+
+  if (g_slab2)
+    g_slabPt = g_slab2->query(g_epiLon, g_epiLat);
+  else
+    g_slabPt = {k_fallbackDepth, k_fallbackStrike, k_fallbackDip, true,
+                nullptr};
   g_hasClick = true;
 
   g_displModel.reset();
@@ -448,6 +504,8 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent* i_e, void*) {
   g_lastY = i_e->targetY;
   if (i_e->button == 0) {
     g_mouseLeft = true;
+    g_pressX = g_lastX;
+    g_pressY = g_lastY;
     g_dragDist = 0.0f;
     if (g_state == AppState::REGION_SELECT && g_globeView)
       g_globeView->onMousePress((float)g_lastX, (float)g_lastY, g_screenW,
@@ -469,6 +527,18 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent* i_e, void*) {
     g_mouseLeft = false;
     if (g_state == AppState::REGION_SELECT && g_globeView) {
       g_globeView->onMouseRelease();
+      // Released without dragging on a subduction zone: propose a selection
+      // rectangle around that spot as a quick start for a simulation region.
+      const bool l_isClick =
+          std::abs(g_lastX - g_pressX) + std::abs(g_lastY - g_pressY) < 5.0;
+      if (l_isClick && g_slab2 && g_globeView->showSlab2Overlay) {
+        const glm::vec2 l_w = regionUnproject((float)g_lastX, (float)g_lastY,
+                                              g_screenW, g_screenH, g_camera);
+        // World X = lon, Z = -lat on the flat map.
+        if (g_slab2->query(l_w.x, -l_w.y).valid)
+          g_globeView->setSelection(
+              suggestSlabSelection(l_w.x, -l_w.y, g_globeView->maxSelDeg));
+      }
     } else if (g_state == AppState::REGION_PREVIEW && g_dragDist < 5.0f &&
                !simRunning()) {
       // Released without dragging: treat as a click and pick an epicentre.
@@ -656,6 +726,72 @@ static void resize(int i_cssW, int i_cssH, double i_dpr) {
   if (g_booted)
     emscripten_set_canvas_element_size("#canvas", (int)(i_cssW * i_dpr),
                                        (int)(i_cssH * i_dpr));
+}
+
+// Slab2 bundle fetched (and gunzipped) by JS at boot: enables the
+// subduction-zone overlays and real fault geometry at the epicentre.
+static bool loadSlab2Bytes(uintptr_t i_ptr, int i_size) {
+  std::unique_ptr<tsunami_lab::io::Slab2Reader> l_reader =
+      web::parseSlab2((const uint8_t*)i_ptr, (size_t)i_size);
+  if (!l_reader) {
+    std::fprintf(stderr, "Slab2: Bundle unlesbar\n");
+    return false;
+  }
+  g_slab2 = std::move(l_reader);
+  if (g_globeView)
+    g_globeView->buildSlab2Overlay(*g_slab2);
+  if (g_regionView && g_regionView->loaded())
+    g_regionView->buildSlab2Overlay(*g_slab2);
+  return true;
+}
+
+static void setRestrictToSlab2(bool i_v) { g_restrictToSlab2 = i_v; }
+
+static void setShowSlabOverlay(bool i_v) {
+  if (g_globeView)
+    g_globeView->showSlab2Overlay = i_v;
+  if (g_regionView)
+    g_regionView->showSlab2Overlay = i_v;
+}
+
+// Everything the frontend needs to render a cursor tooltip / feedback ring
+// at CSS position (i_x, i_y): geographic coordinates plus the Slab2 sample.
+static emscripten::val getHoverInfo(double i_x, double i_y) {
+  using emscripten::val;
+  val o = val::object();
+  o.set("valid", false);
+  const glm::vec2 l_w =
+      regionUnproject((float)i_x, (float)i_y, g_screenW, g_screenH, g_camera);
+  double l_lon = 0.0, l_lat = 0.0;
+  if (g_state == AppState::REGION_SELECT) {
+    l_lon = l_w.x;
+    l_lat = -l_w.y; // world X = lon, Z = -lat
+    if (l_lon < -180.0 || l_lon > 180.0 || l_lat < -90.0 || l_lat > 90.0)
+      return o;
+  } else {
+    if (!g_regionView || !g_regionView->loaded())
+      return o;
+    g_regionView->worldToLonLat(l_w.x, l_w.y, l_lon, l_lat);
+    if (l_lon < g_regionView->lonMin || l_lon > g_regionView->lonMax ||
+        l_lat < g_regionView->latMin || l_lat > g_regionView->latMax)
+      return o;
+  }
+  o.set("valid", true);
+  o.set("lon", l_lon);
+  o.set("lat", l_lat);
+  if (g_slab2) {
+    const tsunami_lab::io::Slab2Point l_p = g_slab2->query(l_lon, l_lat);
+    val l_s = val::object();
+    l_s.set("valid", l_p.valid);
+    if (l_p.valid) {
+      l_s.set("depth", l_p.depth);
+      l_s.set("strike", l_p.strike);
+      l_s.set("dip", l_p.dip);
+      l_s.set("region", l_p.region ? std::string(l_p.region) : std::string());
+    }
+    o.set("slab", l_s);
+  }
+  return o;
 }
 
 // Region-grid bytes fetched by JS for scenario i_idx; parses, stores and
@@ -847,12 +983,32 @@ static emscripten::val getState() {
   l_q.set("epiLat", g_epiLat);
   l_q.set("computing", g_dispComputing);
   l_q.set("hasDisplacement", g_regionView && g_regionView->hasDisplacement());
+  // Mirror buildDisplacementModel(): inside Slab2 coverage the interface
+  // scaling applies, outside it falls back to Wells & Coppersmith.
+  const bool l_iface =
+      g_slab2 && (g_hasClick ? g_slabPt.valid : g_restrictToSlab2);
   disp::WellsCoppersmith::FaultGeometry l_geo =
-      disp::SubductionScaling::fromMagnitude(g_mw);
+      l_iface ? disp::SubductionScaling::fromMagnitude(g_mw)
+              : disp::WellsCoppersmith::fromMagnitude(g_mw);
   l_q.set("slip", l_geo.slip);
   l_q.set("length", l_geo.length);
   l_q.set("width", l_geo.width);
+  l_q.set("ifaceScaling", l_iface);
+  l_q.set("inCoverage", g_hasClick && g_slabPt.valid);
+  if (g_hasClick && g_slabPt.valid) {
+    l_q.set("slabDepth", g_slabPt.depth);
+    l_q.set("slabStrike", g_slabPt.strike);
+    l_q.set("slabDip", g_slabPt.dip);
+    l_q.set("slabRegion",
+            g_slabPt.region ? std::string(g_slabPt.region) : std::string());
+  }
   o.set("quake", l_q);
+
+  val l_sl = val::object();
+  l_sl.set("available", (bool)g_slab2);
+  l_sl.set("restrict", g_restrictToSlab2);
+  l_sl.set("showOverlay", g_globeView && g_globeView->showSlab2Overlay);
+  o.set("slab", l_sl);
 
   val l_s = val::object();
   const bool l_run = simRunning();
@@ -889,6 +1045,10 @@ EMSCRIPTEN_BINDINGS(tsunami_web) {
   function("getState", &getState);
   function("getScenarios", &getScenarios);
   function("loadScenarioBytes", &loadScenarioBytes);
+  function("loadSlab2Bytes", &loadSlab2Bytes);
+  function("setRestrictToSlab2", &setRestrictToSlab2);
+  function("setShowSlabOverlay", &setShowSlabOverlay);
+  function("getHoverInfo", &getHoverInfo);
   function("loadSelection", &loadSelection);
   function("backToGlobe", &backToGlobe);
   function("reloadRegion", &reloadRegion);

@@ -22,7 +22,11 @@ async function fetchBytes(url, what) {
   $("load-detail").textContent = what;
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
-  return new Uint8Array(await r.arrayBuffer());
+  // .gz payloads are stored pre-compressed; browsers inflate natively.
+  const body = url.endsWith(".gz")
+    ? r.body.pipeThrough(new DecompressionStream("gzip"))
+    : r.body;
+  return new Uint8Array(await new Response(body).arrayBuffer());
 }
 
 function canvasSize() {
@@ -41,6 +45,12 @@ async function boot() {
     return;
   }
   $("loading").classList.add("hidden");
+
+  // Subduction zones load in the background — the app is usable without
+  // them; the overlay and real fault geometry appear once parsed.
+  fetchBytes("public/data/slab2.bin.gz", "")
+    .then((b) => heapCall(b, (p, n) => mod.loadSlab2Bytes(p, n)))
+    .catch((e) => console.warn("Slab2 nicht geladen:", e));
 
   // JS owns the render loop (see AppWeb.cpp renderFrame). rAF pauses in
   // hidden tabs, but renderFrame also polls the displacement worker and the
