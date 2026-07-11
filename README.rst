@@ -15,3 +15,20 @@ https://github.com/JanVogt06
 https://github.com/mbbrueckner
 
 https://github.com/ykoellmann
+
+***********************
+Development environment
+***********************
+
+The dev environments are containerised via ``docker-compose.yml``
+(replaces the former ``shell.nix``)::
+
+    docker compose run --rm native      # build solver CLI + run unit tests
+    docker compose run --rm web-build   # build the wasm/WebGL2 bundle
+    docker compose run --rm data        # extract demo grids from data/GEBCO_2026.nc
+    docker compose run --rm docs        # build the sphinx documentation
+    docker compose up serve             # dev server at http://localhost:8080
+
+One-time host setup (the nix shellHook used to do this)::
+
+    git config core.hooksPath .githooks

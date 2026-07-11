@@ -62,3 +62,6 @@ resources/tsunami_simulations
 # generated web data / build
 web/public/data/
 build-web/
+
+# docker-compose builds
+build-docker/
