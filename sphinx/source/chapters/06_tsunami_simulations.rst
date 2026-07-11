@@ -79,22 +79,22 @@ Results & Visualizations
 The input bathymetry and the vertical displacement of the sea floor are
 visualized below.
 
-.. figure:: ../../../simulations/visualizations/chile/chile_gebco20_usgs_250m_bath_fixed_3d.png
+.. figure:: ../_images/simulations/chile/chile_gebco20_usgs_250m_bath_fixed_3d.png
    :name: fig:chile_bathy
 
 
-.. figure:: ../../../simulations/visualizations/chile/chile_gebco20_usgs_250m_displ_fixed_3d.png
+.. figure:: ../_images/simulations/chile/chile_gebco20_usgs_250m_displ_fixed_3d.png
    :name: fig:chile_displ
 
 The event was simulated at 1500 m, 1000 m and 500 m (not shown here) resolution with outflow boundaries.
 The visualizations show the free surface :math:`\eta = h + b`.
 
-.. figure:: ../../../simulations/visualizations/chile/chile_1500.webp
+.. figure:: ../_images/simulations/chile/chile_1500.webp
    :name: fig:chile_1500m
 
    Chile simulation at 1500 m resolution.
 
-.. figure:: ../../../simulations/visualizations/chile/chile_1000.webp
+.. figure:: ../_images/simulations/chile/chile_1000.webp
    :name: fig:chile_1000m
 
    Chile simulation at 1000 m resolution.
@@ -128,10 +128,10 @@ The computational demands at the studied resolutions (domain
 The input bathymetry and the vertical displacement of the sea floor are
 visualized below.
 
-.. figure:: ../../../simulations/visualizations/tohoku/tohoku_gebco20_usgs_250m_bath_3d.png
+.. figure:: ../_images/simulations/tohoku/tohoku_gebco20_usgs_250m_bath_3d.png
    :name: fig:tohoku_bathy
 
-.. figure:: ../../../simulations/visualizations/tohoku/tohoku_gebco20_usgs_250m_displ_3d.png
+.. figure:: ../_images/simulations/tohoku/tohoku_gebco20_usgs_250m_displ_3d.png
    :name: fig:tohoku_displ
 
 
@@ -139,13 +139,13 @@ The event was simulated at 1000 m and 500 m resolution with outflow boundaries.
 The visualizations show the free surface :math:`\eta = h + b`; a marker indicates the Sōma station.
 The right side of the plots covers the water height over time at the Sōma station.
 
-.. figure:: ../../../simulations/visualizations/tohoku/tohoku_1000.webp
+.. figure:: ../_images/simulations/tohoku/tohoku_1000.webp
    :name: fig:tohoku_1000m
 
    Tohoku simulation at 1000 m resolution.
 
 
-.. figure:: ../../../simulations/visualizations/tohoku/tohoku_500.webp
+.. figure:: ../_images/simulations/tohoku/tohoku_500.webp
    :name: fig:tohoku_500m
 
    Tohoku simulation at 500 m resolution.

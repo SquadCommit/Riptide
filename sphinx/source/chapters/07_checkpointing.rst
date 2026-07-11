@@ -68,7 +68,7 @@ The 2011 M 9.1 Tohoku event was run at 1000 m resolution
        resources/chile/output/tohoku_gebco20_ucsb3_250m_bath.nc \
        resources/chile/output/tohoku_gebco20_ucsb3_250m_displ.nc
 
-.. figure:: ../../../visualizations/course_output.webp
+.. figure:: ../_images/course_output.webp
    :name: fig:coarse_output
 
    Tohoku simulation at 1000 m with coarsening factor :math:`k = 5`

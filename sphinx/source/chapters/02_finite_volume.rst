@@ -57,10 +57,10 @@ These observations match the expectations, since mathematically the momentum get
 
 |rr510| |rr1510|
 
-.. |rr510| image:: ../../../simulations/visualizations/rarerare_5_10_5.gif
+.. |rr510| image:: ../_images/simulations/rarerare_5_10_5.gif
    :width: 20%
 
-.. |rr1510| image:: ../../../simulations/visualizations/rarerare_15_10_5.gif
+.. |rr1510| image:: ../_images/simulations/rarerare_15_10_5.gif
    :width: 20%
 
 
@@ -68,10 +68,10 @@ These observations match the expectations, since mathematically the momentum get
 
 |rr105| |rr1015|
 
-.. |rr105| image:: ../../../simulations/visualizations/rarerare_10_5_5.gif
+.. |rr105| image:: ../_images/simulations/rarerare_10_5_5.gif
    :width: 20%
 
-.. |rr1015| image:: ../../../simulations/visualizations/rarerare_10_15_5.gif
+.. |rr1015| image:: ../_images/simulations/rarerare_10_15_5.gif
    :width: 20%
 
 
@@ -88,10 +88,10 @@ Again, changing the momentum does not affect the wave speed, while changing the 
 
 |ss510| |ss1510|
 
-.. |ss510| image:: ../../../simulations/visualizations/shockshock_5_10_5.gif
+.. |ss510| image:: ../_images/simulations/shockshock_5_10_5.gif
    :width: 20%
 
-.. |ss1510| image:: ../../../simulations/visualizations/shockshock_15_10_5.gif
+.. |ss1510| image:: ../_images/simulations/shockshock_15_10_5.gif
    :width: 20%
 
 
@@ -99,10 +99,10 @@ Again, changing the momentum does not affect the wave speed, while changing the 
 
 |ss105| |ss1015|
 
-.. |ss105| image:: ../../../simulations/visualizations/shockshock_10_5_5.gif
+.. |ss105| image:: ../_images/simulations/shockshock_10_5_5.gif
    :width: 20%
 
-.. |ss1015| image:: ../../../simulations/visualizations/shockshock_10_15_5.gif
+.. |ss1015| image:: ../_images/simulations/shockshock_10_15_5.gif
    :width: 20%
 
 
@@ -120,10 +120,10 @@ Observations
 
 |db105| |db205|
 
-.. |db105| image:: ../../../simulations/visualizations/dambreak_10_5_5.gif
+.. |db105| image:: ../_images/simulations/dambreak_10_5_5.gif
    :width: 20%
 
-.. |db205| image:: ../../../simulations/visualizations/dambreak_20_5_5.gif
+.. |db205| image:: ../_images/simulations/dambreak_20_5_5.gif
    :width: 20%
 
 
@@ -176,7 +176,7 @@ Setup: ``./build/tsunami_lab -n 30000 -d 30000 -t 2400 -p DamBreak 14 3.5 5000 0
 The shock front reaches the village (:math:`x=30000`) at
 :math:`t \approx 2256 s (\sim 37.6 min)`.
 
-.. image:: ../../../simulations/visualizations/evacuation_problem.gif
+.. image:: ../_images/simulations/evacuation_problem.gif
    :width: 30%
 
 Results:
