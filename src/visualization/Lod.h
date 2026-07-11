@@ -1,9 +1,9 @@
 #ifndef TSUNAMI_LAB_VISUALIZATION_LOD_H
 #define TSUNAMI_LAB_VISUALIZATION_LOD_H
 
+#include <GLES3/gl3.h>
 #include <algorithm>
 #include <cmath>
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <vector>
 

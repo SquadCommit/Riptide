@@ -1,11 +1,13 @@
 #include "GlobeView.h"
 
+#include "Gebco.h"
+#ifndef TSUNAMI_NO_SLAB2
 #include "io/Slab2Reader.h"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <netcdf.h>
 #include <string>
 #include <vector>
 
@@ -15,6 +17,48 @@
 namespace tsunami_lab {
 namespace visualization {
 
+void GlobeView::init(const char* i_gebcoPath) {
+  m_terrShader.buildFromFiles(SHADER_DIR "/globe_terrain.vert",
+                              SHADER_DIR "/globe_terrain.frag");
+  m_selShader.buildFromFiles(SHADER_DIR "/globe_selection.vert",
+                             SHADER_DIR "/globe_selection.frag");
+  initSelectionVao();
+  if (i_gebcoPath) {
+    m_gebcoPath = i_gebcoPath;
+    loadGebco(m_gebcoPath.c_str(), m_lonSamples);
+  }
+}
+
+void GlobeView::setResolution(int i_lonSamples) {
+  i_lonSamples =
+      std::max(MIN_LON_SAMPLES, std::min(MAX_LON_SAMPLES, i_lonSamples));
+  if (i_lonSamples == m_lonSamples || m_gebcoPath.empty())
+    return;
+  m_lonSamples = i_lonSamples;
+  loadGebco(m_gebcoPath.c_str(), m_lonSamples);
+}
+
+GlobeView::~GlobeView() {
+  if (m_terrVao) {
+    glDeleteVertexArrays(1, &m_terrVao);
+    glDeleteBuffers(1, &m_terrVbPos);
+    glDeleteBuffers(1, &m_terrVbElv);
+    glDeleteBuffers(lod::k_maxLevels, m_terrEbos);
+  }
+  if (m_selVao) {
+    glDeleteVertexArrays(1, &m_selVao);
+    glDeleteBuffers(1, &m_selVbo);
+    glDeleteBuffers(1, &m_selEbo);
+  }
+  if (m_slabVao) {
+    glDeleteVertexArrays(1, &m_slabVao);
+    glDeleteBuffers(1, &m_slabVbo);
+  }
+  if (m_slabTex)
+    glDeleteTextures(1, &m_slabTex);
+}
+
+#ifndef TSUNAMI_NO_SLAB2
 // Inline shaders for the subduction-zone overlay: a world-spanning quad in
 // (lon, lat) over the flat map, textured with the depth-graded Slab2 coverage.
 static const char* k_slabVert = R"(#version 330 core
@@ -65,46 +109,6 @@ static void slabDepthColor(double i_depthKm, unsigned char* o_rgba) {
   o_rgba[3] = (unsigned char)(l_a.a + (l_b.a - l_a.a) * l_f);
 }
 
-void GlobeView::init(const char* i_gebcoPath) {
-  m_terrShader.buildFromFiles(SHADER_DIR "/globe_terrain.vert",
-                              SHADER_DIR "/globe_terrain.frag");
-  m_selShader.buildFromFiles(SHADER_DIR "/globe_selection.vert",
-                             SHADER_DIR "/globe_selection.frag");
-  initSelectionVao();
-  if (i_gebcoPath) {
-    m_gebcoPath = i_gebcoPath;
-    loadGebco(m_gebcoPath.c_str(), m_lonSamples);
-  }
-}
-
-void GlobeView::setResolution(int i_lonSamples) {
-  i_lonSamples =
-      std::max(MIN_LON_SAMPLES, std::min(MAX_LON_SAMPLES, i_lonSamples));
-  if (i_lonSamples == m_lonSamples || m_gebcoPath.empty())
-    return;
-  m_lonSamples = i_lonSamples;
-  loadGebco(m_gebcoPath.c_str(), m_lonSamples);
-}
-
-GlobeView::~GlobeView() {
-  if (m_terrVao) {
-    glDeleteVertexArrays(1, &m_terrVao);
-    glDeleteBuffers(1, &m_terrVbPos);
-    glDeleteBuffers(1, &m_terrVbElv);
-    glDeleteBuffers(lod::k_maxLevels, m_terrEbos);
-  }
-  if (m_selVao) {
-    glDeleteVertexArrays(1, &m_selVao);
-    glDeleteBuffers(1, &m_selVbo);
-  }
-  if (m_slabVao) {
-    glDeleteVertexArrays(1, &m_slabVao);
-    glDeleteBuffers(1, &m_slabVbo);
-  }
-  if (m_slabTex)
-    glDeleteTextures(1, &m_slabTex);
-}
-
 void GlobeView::buildSlab2Overlay(const io::Slab2Reader& i_slab2) {
   // Slab2 grids are 0.05°-spaced; 0.1° texels keep this one-time scan fast
   // while the zones (several degrees across) stay crisp under linear
@@ -153,54 +157,29 @@ void GlobeView::buildSlab2Overlay(const io::Slab2Reader& i_slab2) {
   m_hasSlabOverlay = true;
 }
 
+#endif // TSUNAMI_NO_SLAB2
+
 void GlobeView::loadGebco(const char* i_path, int i_lonSamples) {
-  // Globally subsample GEBCO so the longitude axis holds ~i_lonSamples points;
-  // the latitude axis uses the same stride (half as many points over 180°).
-  // GEBCO 2025: lat from +90→-90, lon from -180→+180, elevation(lat, lon).
-  int ncid = -1;
-  if (nc_open(i_path, NC_NOWRITE, &ncid) != NC_NOERR) {
-    std::fprintf(stderr, "GlobeView: cannot open %s\n", i_path);
+  // Globally subsample the elevation source so the longitude axis holds
+  // ~i_lonSamples points; the latitude axis uses the same stride (half as
+  // many points over 180 degrees). readRegion() strides by max(axis), which
+  // for the 2:1 world box is exactly the longitude axis.
+  BBox l_world;
+  l_world.lonMin = -180.0f;
+  l_world.lonMax = 180.0f;
+  l_world.latMin = -90.0f;
+  l_world.latMax = 90.0f;
+
+  gebco::Region l_reg;
+  if (!gebco::readRegion(i_path, l_world, l_reg, i_lonSamples) || l_reg.w < 2 ||
+      l_reg.h < 2) {
+    std::fprintf(stderr,
+                 "GlobeView: Welt-Gitter konnte nicht gelesen werden\n");
     return;
   }
 
-  int latDim = -1, lonDim = -1, varid = -1;
-  size_t nLat = 0, nLon = 0;
-  if (nc_inq_dimid(ncid, "lat", &latDim) != NC_NOERR ||
-      nc_inq_dimid(ncid, "lon", &lonDim) != NC_NOERR ||
-      nc_inq_dimlen(ncid, latDim, &nLat) != NC_NOERR ||
-      nc_inq_dimlen(ncid, lonDim, &nLon) != NC_NOERR ||
-      nc_inq_varid(ncid, "elevation", &varid) != NC_NOERR || nLat < 2 ||
-      nLon < 2) {
-    std::fprintf(stderr, "GlobeView: GEBCO dimensions/'elevation' not found\n");
-    nc_close(ncid);
-    return;
-  }
-
-  const long stride =
-      std::max<long>(1, ((long)nLon + i_lonSamples - 1) / i_lonSamples);
-  const int kW = (int)(((long)nLon - 1) / stride + 1);
-  const int kH = (int)(((long)nLat - 1) / stride + 1);
-
-  std::vector<short> raw((size_t)kW * kH);
-  size_t start[2] = {0, 0};
-  size_t count[2] = {(size_t)kH, (size_t)kW};
-  ptrdiff_t strd[2] = {stride, stride};
-
-  if (nc_get_vars_short(ncid, varid, start, count, strd, raw.data()) !=
-      NC_NOERR) {
-    std::fprintf(stderr, "GlobeView: failed to read elevation data\n");
-    nc_close(ncid);
-    return;
-  }
-  nc_close(ncid);
-
-  std::vector<float> elev((size_t)kW * kH);
-  for (int k = 0; k < kW * kH; k++)
-    elev[k] = (float)raw[k];
-
-  std::fprintf(stderr, "[GEBCO] Welt-Gitter: %d×%d (Stride %ld).\n", kW, kH,
-               stride);
-  buildTerrainMesh(elev.data(), kW, kH);
+  std::fprintf(stderr, "[GEBCO] Welt-Gitter: %d\u00d7%d.\n", l_reg.w, l_reg.h);
+  buildTerrainMesh(l_reg.elev.data(), l_reg.w, l_reg.h);
 }
 
 void GlobeView::buildTerrainMesh(const float* i_elev, int i_w, int i_h) {
@@ -251,22 +230,44 @@ void GlobeView::buildTerrainMesh(const float* i_elev, int i_w, int i_h) {
   glEnableVertexAttribArray(1);
 
   // One index buffer per LOD level (vertex stride doubles each level, until a
-  // further level would no longer reduce the grid).
+  // further level would no longer reduce the grid). Browsers reject very
+  // large buffer uploads (the stride-1 level of a 4320-wide grid is ~224 MB),
+  // so levels above the budget are skipped and draw() clamps to the finest
+  // level that actually has a buffer — visually equivalent at globe zoom.
+  constexpr size_t k_maxEboBytes = 64u << 20;
   m_terrNumLods = 0;
+  m_terrMinLod = -1;
   std::vector<unsigned int> idx;
   for (int l_L = 0; l_L < lod::k_maxLevels; l_L++) {
     const int l_stride = 1 << l_L;
     if (l_L > 0 && l_stride >= i_w - 1 && l_stride >= i_h - 1)
       break;
-    lod::buildIndices(i_w, i_h, l_stride, idx);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_terrEbos[l_L]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 (GLsizeiptr)(idx.size() * sizeof(unsigned int)), idx.data(),
-                 GL_STATIC_DRAW);
-    m_terrIdxCnts[l_L] = (GLsizei)idx.size();
+    m_terrIdxCnts[l_L] = 0;
     m_terrNumLods = l_L + 1;
+    lod::buildIndices(i_w, i_h, l_stride, idx);
+    const size_t l_bytes = idx.size() * sizeof(unsigned int);
+    if (l_bytes > k_maxEboBytes) {
+      std::fprintf(
+          stderr,
+          "GlobeView: LOD %d uebersteigt EBO-Budget (%zu MB), ausgelassen\n",
+          l_L, l_bytes >> 20);
+      continue;
+    }
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_terrEbos[l_L]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)l_bytes, idx.data(),
+                 GL_STATIC_DRAW);
+    const GLenum l_err = glGetError();
+    if (l_err != GL_NO_ERROR) {
+      std::fprintf(
+          stderr,
+          "GlobeView: EBO-Upload LOD %d (%zu MB) fehlgeschlagen (0x%x)\n", l_L,
+          l_bytes >> 20, l_err);
+      continue;
+    }
+    m_terrIdxCnts[l_L] = (GLsizei)idx.size();
+    if (m_terrMinLod < 0)
+      m_terrMinLod = l_L;
   }
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_terrEbos[0]);
 
   glBindVertexArray(0);
 }
@@ -282,13 +283,22 @@ void GlobeView::initSelectionVao() {
                GL_DYNAMIC_DRAW);
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
   glEnableVertexAttribArray(0);
+  // Outline order SW→SE→NE→NW→SW over the strip-ordered corners; WebGL2
+  // has no client-side index arrays, so the indices live in a small EBO.
+  const unsigned int l_lineIdx[5] = {0, 1, 3, 2, 0};
+  glGenBuffers(1, &m_selEbo);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_selEbo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(l_lineIdx), l_lineIdx,
+               GL_STATIC_DRAW);
   glBindVertexArray(0);
 }
 
 void GlobeView::draw(const glm::mat4& i_vp) const {
-  if (m_terrVao && m_terrNumLods > 0) {
-    const int l_lod = lod::pickLevel(m_cellWorld, m_terrNumLods, lodCamDistance,
-                                     lodViewportPx);
+  if (m_terrVao && m_terrNumLods > 0 && m_terrMinLod >= 0) {
+    // Never pick a level whose index buffer was skipped/failed at build time.
+    const int l_lod =
+        std::max(m_terrMinLod, lod::pickLevel(m_cellWorld, m_terrNumLods,
+                                              lodCamDistance, lodViewportPx));
     // The flat map lies in the y = 0 plane; cull grid rows/columns outside
     // the frustum footprint so close zooms do not pay vertex costs for the
     // whole (up to ~150 M triangle) globe mesh. World X = lon, Z = -lat.
@@ -341,9 +351,7 @@ void GlobeView::draw(const glm::mat4& i_vp) const {
 
     glLineWidth(2.0f);
     m_selShader.setVec4("uColor", glm::vec4(1.0f, 0.9f, 0.0f, 1.0f));
-    // Vertices: SW=0, SE=1, NW=2, NE=3; outline order: SW→SE→NE→NW→SW
-    const unsigned int lineIdx[5] = {0, 1, 3, 2, 0};
-    glDrawElements(GL_LINE_STRIP, 5, GL_UNSIGNED_INT, lineIdx);
+    glDrawElements(GL_LINE_STRIP, 5, GL_UNSIGNED_INT, nullptr);
 
     glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);

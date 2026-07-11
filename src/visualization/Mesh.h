@@ -3,8 +3,8 @@
 
 #include "../constants.h"
 #include "Shader.h"
+#include <GLES3/gl3.h>
 #include <cstddef>
-#include <glad/glad.h>
 #include <vector>
 
 namespace tsunami_lab {

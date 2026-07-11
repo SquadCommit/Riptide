@@ -5,7 +5,7 @@
 #include "Camera.h"
 #include "Lod.h"
 #include "Shader.h"
-#include <glad/glad.h>
+#include <GLES3/gl3.h>
 #include <glm/glm.hpp>
 #include <string>
 
@@ -86,11 +86,13 @@ private:
   GLuint m_terrEbos[lod::k_maxLevels] = {};
   GLsizei m_terrIdxCnts[lod::k_maxLevels] = {};
   int m_terrNumLods = 0;
+  int m_terrMinLod = -1;    // finest level with a resident index buffer
   float m_cellWorld = 0.0f; // world-unit (degree) size of one grid cell
   int m_gridW = 0, m_gridH = 0;
 
   GLuint m_selVao = 0;
   GLuint m_selVbo = 0;
+  GLuint m_selEbo = 0; // outline indices (WebGL2 has no client-side arrays)
 
   // Subduction-zone overlay: a depth-graded RGBA texture on a world-spanning
   // quad (see buildSlab2Overlay).

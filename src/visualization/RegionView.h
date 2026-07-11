@@ -6,7 +6,7 @@
 #include "Lod.h"
 #include "Shader.h"
 #include "displacement/DisplacementModel.h"
-#include <glad/glad.h>
+#include <GLES3/gl3.h>
 #include <glm/glm.hpp>
 #include <vector>
 

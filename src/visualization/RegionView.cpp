@@ -1,7 +1,9 @@
 #include "RegionView.h"
 
 #include "Lod.h"
+#ifndef TSUNAMI_NO_SLAB2
 #include "io/Slab2Reader.h"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -308,6 +310,7 @@ void RegionView::clearDisplacement() {
   m_hasDispl = false;
 }
 
+#ifndef TSUNAMI_NO_SLAB2
 void RegionView::buildSlab2Overlay(const io::Slab2Reader& i_slab2) {
   if (m_vao == 0 || gridW < 2 || gridH < 2)
     return;
@@ -382,6 +385,8 @@ void RegionView::buildSlab2Overlay(const io::Slab2Reader& i_slab2) {
 
   m_hasOverlay = true;
 }
+
+#endif // TSUNAMI_NO_SLAB2
 
 void RegionView::beginSimulation(t_idx i_nx, t_idx i_ny, const float* i_bath) {
   if (i_nx < 2 || i_ny < 2 || i_bath == nullptr)
