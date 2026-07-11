@@ -6,6 +6,9 @@ Plain `python3 -m http.server` does not work: the wasm build uses pthreads
 pages — the COOP/COEP headers below provide that. Production hosting must
 send the same two headers.
 
+Serves the production build (web/dist, created by `npm run build`);
+during development use `npm run dev` instead (vite sends the same headers).
+
 Usage:  python3 web/serve.py [port]   (default 8080), then open
         http://localhost:8080/
 """
@@ -30,7 +33,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist"))
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     print(f"http://localhost:{port}/")
     http.server.ThreadingHTTPServer(("", port), Handler).serve_forever()

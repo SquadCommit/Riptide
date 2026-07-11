@@ -65,3 +65,7 @@ build-web/
 
 # docker-compose builds
 build-docker/
+
+# frontend
+web/node_modules/
+web/dist/

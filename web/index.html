@@ -1,112 +1,14 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<title>Tsunami Lab</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  /* Minimal hand-rolled panel to exercise the wasm API end-to-end.
-     Gets replaced by the React/shadcn frontend, which talks to the exact
-     same embind interface (see src/web/AppWeb.cpp bindings). */
-  * { box-sizing: border-box; margin: 0; }
-  html, body { height: 100%; overflow: hidden;
-    font: 13px/1.45 system-ui, sans-serif; background: #0f1722; color: #dbe4ee; }
-  #app { display: flex; height: 100%; }
-  #panel { width: 320px; min-width: 320px; padding: 14px; overflow-y: auto;
-    background: #16202e; border-right: 1px solid #26344a; }
-  #view { flex: 1; position: relative; }
-  #canvas { position: absolute; inset: 0; width: 100%; height: 100%;
-    display: block; outline: none; }
-  h1 { font-size: 15px; margin-bottom: 10px; color: #7ec3f0; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
-    color: #8fa3bd; margin: 16px 0 6px; border-bottom: 1px solid #26344a;
-    padding-bottom: 3px; }
-  button { display: block; width: 100%; margin: 4px 0; padding: 7px 10px;
-    background: #24344c; color: #dbe4ee; border: 1px solid #35486a;
-    border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px; }
-  button:hover { background: #2d4160; }
-  button:disabled { opacity: .45; cursor: default; }
-  button.primary { background: #1c6e3a; border-color: #2c9a55; }
-  button.danger  { background: #7a2721; border-color: #a63a31; }
-  label { display: block; margin: 8px 0 2px; color: #8fa3bd; font-size: 12px; }
-  input[type=range] { width: 100%; }
-  .row { display: flex; gap: 6px; align-items: center; }
-  .val { color: #dbe4ee; float: right; }
-  .muted { color: #6d7f97; font-size: 12px; margin-top: 4px; }
-  .error { color: #f08080; margin-top: 6px; }
-  .status { color: #ffd95e; }
-  #loading { position: absolute; inset: 0; display: flex; align-items: center;
-    justify-content: center; background: #0f1722; z-index: 10;
-    flex-direction: column; gap: 10px; }
-  .hidden { display: none !important; }
-</style>
-</head>
-<body>
-<div id="app">
-  <div id="panel">
-    <h1>Tsunami Lab</h1>
-
-    <div id="p-globe">
-      <div class="muted">
-        Linksklick + Ziehen: Gebiet zeichnen<br>
-        Mittelklick / WASD: Karte verschieben<br>
-        Scrollrad: Zoom
-      </div>
-      <h2>Historische Szenarien</h2>
-      <div id="scenarios"></div>
-      <h2>Auswahl</h2>
-      <div id="sel-info" class="muted">Bereich auf der Karte ziehen.</div>
-      <button id="btn-load" class="primary hidden">Bathymetrie laden &raquo;</button>
-      <button id="btn-clear-sel" class="hidden">Auswahl l&ouml;schen</button>
-      <div class="muted">Freie Auswahl nutzt vorerst das grobe Welt-Gitter;
-        volle Aufl&ouml;sung gibt es in den Szenarien (Tile-Pipeline folgt).</div>
-    </div>
-
-    <div id="p-region" class="hidden">
-      <div id="reg-info" class="muted"></div>
-      <div class="muted" style="margin-top:6px">
-        Klick auf Terrain: Epizentrum setzen<br>
-        Linksklick + Ziehen: Drehen &middot; Scrollrad: Zoom
-      </div>
-
-      <h2>Erdbeben</h2>
-      <label>Magnitude (Mw) <span class="val" id="mw-val"></span></label>
-      <input type="range" id="mw" min="6" max="9.5" step="0.1">
-      <div id="quake-info" class="muted"></div>
-
-      <h2>Darstellung</h2>
-      <div class="row">
-        <button id="btn-field-bathy">Bathymetrie</button>
-        <button id="btn-field-disp">Displacement</button>
-      </div>
-      <label>&Uuml;berh&ouml;hung <span class="val" id="vex-val"></span></label>
-      <input type="range" id="vex" min="1" max="100" step="1">
-      <label>Wellen-&Uuml;berh&ouml;hung <span class="val" id="wex-val"></span></label>
-      <input type="range" id="wex" min="0" max="3.7" step="0.01">
-      <label><input type="checkbox" id="show-sea"> Meeresspiegel anzeigen</label>
-
-      <h2>Simulation</h2>
-      <label>Aufl&ouml;sung (m/Zelle) <span class="val" id="cell-val"></span></label>
-      <input type="range" id="cell" min="1.7" max="4.3" step="0.01">
-      <div id="grid-preview" class="muted"></div>
-      <label>Zeitraffer <span class="val" id="speed-val"></span></label>
-      <input type="range" id="speed" min="0" max="3.3" step="0.01">
-      <label><input type="checkbox" id="auto-speed"> automatisch (CPU-Limit)</label>
-      <button id="btn-sim" class="primary">Simulieren &raquo;</button>
-      <div id="sim-info" class="status"></div>
-
-      <h2></h2>
-      <button id="btn-back">&laquo; Zur&uuml;ck zur Gebietsauswahl</button>
-    </div>
-
-    <div id="error" class="error"></div>
-  </div>
-  <div id="view">
-    <div id="loading"><div>Lade Tsunami Lab &hellip;</div><div id="load-detail" class="muted"></div></div>
-    <canvas id="canvas" tabindex="0"></canvas>
-  </div>
-</div>
-<script src="public/wasm/tsunami_web.js"></script>
-<script src="main.js"></script>
-</body>
+<!doctype html>
+<html lang="de" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tsunami Lab</title>
+    <!-- MODULARIZE'd emscripten bundle: exposes global createTsunamiModule() -->
+    <script src="/wasm/tsunami_web.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

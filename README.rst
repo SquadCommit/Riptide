@@ -26,8 +26,13 @@ The dev environments are containerised via ``docker-compose.yml``
     docker compose run --rm native      # build solver CLI + run unit tests
     docker compose run --rm web-build   # build the wasm/WebGL2 bundle
     docker compose run --rm data        # extract demo grids from data/GEBCO_2026.nc
+    docker compose run --rm frontend    # build the React app into web/dist
     docker compose run --rm docs        # build the sphinx documentation
-    docker compose up serve             # dev server at http://localhost:8080
+    docker compose up serve             # serve web/dist at http://localhost:8080
+
+Frontend development (React + Vite + shadcn/ui, in ``web/``)::
+
+    npm install && npm run dev          # dev server at http://localhost:5173
 
 One-time host setup (the nix shellHook used to do this)::
 
