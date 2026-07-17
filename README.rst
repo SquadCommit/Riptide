@@ -2,38 +2,143 @@
 Tsunami Lab
 ###########
 
-Repository is hosted under https://github.com/ykoellmann/tsunami_lab.
+Interactive tsunami simulation in the browser: the finite-volume solver
+(FWave) runs as WebAssembly on pthreads, rendering is WebGL2, the UI is
+React. Pick a subduction zone on the world map, place an earthquake with
+real USGS-Slab2 fault geometry, and watch the wave propagate live over
+GEBCO bathymetry.
 
-User Documentation is hosted under https://ykoellmann.github.io/tsunami_lab/.
+- Repository: https://github.com/ykoellmann/tsunami_lab
+- User documentation: https://ykoellmann.github.io/tsunami_lab/
+- Code documentation: https://ykoellmann.github.io/tsunami_lab/doxygen/
 
-Code Documentation is hosted under https://ykoellmann.github.io/tsunami_lab/doxygen/.
+.. contents:: What do you want to do?
+   :local:
+   :depth: 1
 
-Project Team:
+**********************
+First-time setup
+**********************
 
-https://github.com/JanVogt06
+Everything below assumes these one-time steps are done.
 
-https://github.com/mbbrueckner
+1. Clone **including submodules** (Catch2, pugixml, glm)::
 
-https://github.com/ykoellmann
+       git clone --recurse-submodules <repo-url>
+       # or, after a plain clone:
+       git submodule update --init
 
-***********************
-Development environment
-***********************
+2. Enable the pre-commit hooks (style check + unit tests)::
 
-The dev environments are containerised via ``docker-compose.yml``
-(replaces the former ``shell.nix``)::
+       git config core.hooksPath .githooks
 
-    docker compose run --rm native      # build solver CLI + run unit tests
-    docker compose run --rm web-build   # build the wasm/WebGL2 bundle
-    docker compose run --rm data        # extract demo grids from data/GEBCO_2026.nc
-    docker compose run --rm frontend    # build the React app into web/dist
-    docker compose run --rm docs        # build the sphinx documentation
-    docker compose up serve             # serve web/dist at http://localhost:8080
+3. Provide the datasets under ``data/`` (not in the repo, ~7 GB):
 
-Frontend development (React + Vite + shadcn/ui, in ``web/``)::
+   - ``data/GEBCO_2026.nc`` — GEBCO ice-surface global grid, 15 arc-sec.
+     Download the NetCDF zip from BODC/CEDA
+     (https://www.gebco.net/data_and_products/gridded_bathymetry_data/)
+     and unzip it into ``data/``.
+   - ``data/<code>_slab2_{dep,str,dip}.grd`` — USGS Slab2 subduction
+     grids (https://www.sciencebase.gov/catalog/item/5aa1b00ee4b0b1c392e86467).
+     The native solver CLI downloads them automatically on first run;
+     manual download works too.
 
-    npm install && npm run dev          # dev server at http://localhost:5173
+4. Install **Docker** (recommended path below) — or the local toolchains
+   listed in `Working without Docker`_.
 
-One-time host setup (the nix shellHook used to do this)::
+*******************************
+Run the web app (Docker)
+*******************************
 
-    git config core.hooksPath .githooks
+Four steps, in this order — later steps consume the artifacts of
+earlier ones::
+
+    docker compose run --rm web-build   # 1. C++ -> wasm     -> web/public/wasm/
+    docker compose run --rm data        # 2. GEBCO/Slab2     -> web/public/data/
+    docker compose run --rm frontend    # 3. React build     -> web/dist/
+    docker compose up serve             # 4. http://localhost:8080
+
+Step 3 copies ``web/public/`` (wasm + data) into ``web/dist/`` — that is
+why it must run last.
+
+When something changes, rebuild only what is affected:
+
+===============================  =========================================
+You changed …                    Re-run …
+===============================  =========================================
+C++ (``src/``)                   ``web-build``, then ``frontend``
+Scenario list / data tooling     ``data``, then ``frontend``
+Frontend (``web/src/``)          ``frontend`` (or use the dev server)
+Nothing, just serving            ``docker compose up serve``
+===============================  =========================================
+
+*************************************
+Develop the frontend (dev server)
+*************************************
+
+For UI work you do not need Docker or Emscripten — a prebuilt wasm
+bundle is committed under ``web/public/wasm/``::
+
+    cd web
+    npm install
+    npm run dev          # http://localhost:5173, hot reload, COOP/COEP set
+
+The demo grids under ``web/public/data/`` must exist once (step 2
+above, or copy them from a machine that has them).
+
+*****************************
+Working without Docker
+*****************************
+
+**Wasm build** — needs the Emscripten SDK (verified with 6.0.2)::
+
+    source ~/emsdk/emsdk_env.sh
+    emcmake cmake -B build-web && cmake --build build-web -j
+
+**Demo data** — needs Python 3 with ``netCDF4`` and ``numpy``::
+
+    python3 tools/make_web_data.py
+
+**Native solver CLI + unit tests** — needs cmake, a C++11 compiler and
+libnetcdf::
+
+    cmake -B build && cmake --build build -j
+    ./build/tests            # unit tests
+    ./build/tsunami_lab      # batch solver
+
+****************************
+Build the documentation
+****************************
+
+::
+
+    docker compose run --rm docs        # sphinx -> sphinx/build/html
+    # without Docker: pip install sphinx sphinx-rtd-theme
+    # then: sphinx-build -b html sphinx/source sphinx/build/html
+
+*********************
+Repository layout
+*********************
+
+::
+
+    src/
+      solvers/, patches/, setups/   numerical core (native + wasm)
+      displacement/                 Okada fault model, scaling laws
+      io/                           NetCDF, Slab2 reader (query is wasm-safe)
+      visualization/                WebGL2 renderer (globe + region views)
+      web/                          wasm entry point, embind API, data loaders
+    web/                            React + Vite + shadcn/ui frontend
+      public/wasm/                  committed wasm bundle (from web-build)
+      public/data/                  generated demo grids (gitignored)
+    tools/make_web_data.py          GEBCO/Slab2 -> binary bundles
+    docker/, docker-compose.yml     reproducible build/dev environments
+    sphinx/, docs/                  user documentation, Doxygen config
+
+************
+Project team
+************
+
+- https://github.com/JanVogt06
+- https://github.com/mbbrueckner
+- https://github.com/ykoellmann
