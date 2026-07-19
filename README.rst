@@ -37,8 +37,8 @@ Everything below assumes these one-time steps are done.
 The datasets under ``data/`` (not in the repo, ~7 GB) are downloaded
 automatically by the ``data`` step on first run — GEBCO ice-surface
 global grid (BODC/CEDA, ~4.3 GB zip) and the USGS Slab2 subduction
-grids (ScienceBase, ~30 MB). An interrupted download resumes on the
-next run. Nothing to do manually; ``tools/fetch_data.py`` also works
+grids (ScienceBase, ~140 MB archive). An interrupted download resumes
+on the next run. Nothing to do manually; ``tools/fetch_data.py`` also works
 standalone.
 
 *******************************

@@ -4,17 +4,22 @@
   data/GEBCO_2026.nc                     GEBCO ice-surface global grid
                                          (zip ~4.3 GB -> nc ~7.5 GB, BODC/CEDA)
   data/<code>_slab2_{dep,str,dip}.grd    USGS Slab2 subduction grids
-                                         (27 regions, ~30 MB, ScienceBase)
+                                         (27 regions, from the ~140 MB
+                                         distribution tarball on ScienceBase)
 
-Python port of the first-run download the native CLI performs
-(src/io/Slab2Reader.cpp and, on main, src/visualization/Gebco.cpp), so the
-docker data pipeline bootstraps itself. Interrupted downloads resume.
+Bootstraps the docker data pipeline the way the native CLI's first-run
+download does (src/io/Slab2Reader.cpp and, on main, src/visualization/
+Gebco.cpp) — but pulls Slab2 from the all-in-one tarball instead of the
+per-file endpoint, which 404s for a handful of unpublished files.
+Interrupted downloads resume where the server supports range requests.
 
 Requires: pip install netCDF4
 """
 
 import os
+import re
 import sys
+import tarfile
 import urllib.error
 import urllib.request
 import zipfile
@@ -31,38 +36,16 @@ GEBCO_ZIP = os.path.join(DATA, "GEBCO_2026.zip")
 GEBCO_URL = ("https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/"
              "ice_surface_elevation/netcdf/GEBCO_2026.zip?download=1")
 
-# Keep in sync with k_regions in src/io/Slab2Reader.cpp: three-letter code ->
-# (ScienceBase item id, filename date). Remote names follow the pattern
-# <code>_slab2_<quantity>_<date>.grd; local copies drop the date.
-SLAB2_REGIONS = {
-    "alu": ("5aa2c535e4b0b1c392ea3ca2", "02.23.18"),
-    "cal": ("5aa31058e4b0b1c392ea3e63", "02.24.18"),
-    "cam": ("5aa31127e4b0b1c392ea3e68", "02.24.18"),
-    "car": ("5aa311dbe4b0b1c392ea3ef2", "02.24.18"),
-    "cas": ("5aa312cde4b0b1c392ea3ef5", "02.24.18"),
-    "cot": ("5aa314dae4b0b1c392ea3efe", "02.24.18"),
-    "hal": ("5aa3156fe4b0b1c392ea3f01", "02.23.18"),
-    "hel": ("5aa31604e4b0b1c392ea3f04", "02.24.18"),
-    "him": ("5aa316fae4b0b1c392ea3f07", "02.24.18"),
-    "hin": ("5aa3177ae4b0b1c392ea3f0a", "02.24.18"),
-    "izu": ("5aa3185ee4b0b1c392ea3f0d", "02.24.18"),
-    "ker": ("5aa318e1e4b0b1c392ea3f10", "02.24.18"),
-    "kur": ("5aa4060de4b0b1c392eaaee2", "02.24.18"),
-    "mak": ("5aa406f1e4b0b1c392eaaee5", "02.24.18"),
-    "man": ("5aa4076fe4b0b1c392eaaee8", "02.24.18"),
-    "mue": ("5aa40800e4b0b1c392eaaeeb", "02.24.18"),
-    "pam": ("5aa40985e4b0b1c392eaaeee", "02.26.18"),
-    "phi": ("5aa40a33e4b0b1c392eaaef4", "02.26.18"),
-    "png": ("5aa413f2e4b0b1c392eaaf2a", "02.26.18"),
-    "puy": ("5aa412b2e4b0b1c392eaaf27", "02.26.18"),
-    "ryu": ("5aa40aafe4b0b1c392eaaefa", "02.26.18"),
-    "sam": ("5aa41473e4b0b1c392eaaf2d", "02.23.18"),
-    "sco": ("5aa41674e4b0b1c392eaaf31", "02.23.18"),
-    "sol": ("5aa41721e4b0b1c392eaaf35", "02.23.18"),
-    "sul": ("5aa417cbe4b0b1c392eaaf38", "02.23.18"),
-    "sum": ("5aa41834e4b0b1c392eaaf3b", "02.23.18"),
-    "van": ("5aa4189ee4b0b1c392eaaf3d", "02.23.18"),
-}
+# Keep in sync with k_regions in src/io/Slab2Reader.cpp. The tarball holds
+# grids named <code>_slab2_<quantity>_<date>.grd; local copies drop the date.
+SLAB2_CODES = (
+    "alu", "cal", "cam", "car", "cas", "cot", "hal", "hel", "him",
+    "hin", "izu", "ker", "kur", "mak", "man", "mue", "pam", "phi",
+    "png", "puy", "ryu", "sam", "sco", "sol", "sul", "sum", "van",
+)
+SLAB2_TAR = os.path.join(DATA, "Slab2Distribute_Mar2018.tar.gz")
+SLAB2_URL = ("https://www.sciencebase.gov/catalog/file/get/"
+             "5aa1b00ee4b0b1c392e86467?name=Slab2Distribute_Mar2018.tar.gz")
 
 
 def is_valid_nc(path, var):
@@ -150,38 +133,45 @@ def ensure_gebco():
 
 
 def ensure_slab2():
-    """Downloads any missing/broken Slab2 region grids. Failed regions are
-    tolerated (they are skipped when bundling), missing all is an error."""
+    """Extracts any missing/broken Slab2 region grids from the distribution
+    tarball, downloading it once on demand. Exits if none end up usable."""
     quantities = ("dep", "str", "dip")
 
     def complete(code):
         return all(is_valid_nc(os.path.join(DATA, f"{code}_slab2_{q}.grd"),
                                "z") for q in quantities)
 
-    todo = [c for c in SLAB2_REGIONS if not complete(c)]
+    todo = {c for c in SLAB2_CODES if not complete(c)}
     if not todo:
         return
-    print(f"[Slab2] {len(todo)}/{len(SLAB2_REGIONS)} Regionen fehlen — "
-          "Download von USGS ScienceBase (~30 MB gesamt) …")
+    print(f"[Slab2] {len(todo)}/{len(SLAB2_CODES)} Regionen fehlen — "
+          "einmaliger Download des Slab2-Archivs (~140 MB) von USGS "
+          "ScienceBase …")
     os.makedirs(DATA, exist_ok=True)
+    if not download(SLAB2_URL, SLAB2_TAR, "Slab2Distribute_Mar2018.tar.gz"):
+        sys.exit("[Slab2] Download fehlgeschlagen.")
 
-    for i, code in enumerate(sorted(todo), 1):
-        item, date = SLAB2_REGIONS[code]
-        print(f"[Slab2] ({i}/{len(todo)}) {code} …")
-        for q in quantities:
-            local = os.path.join(DATA, f"{code}_slab2_{q}.grd")
-            if is_valid_nc(local, "z"):
+    # Stream just the wanted grids out of the tarball, dropping the date
+    # stamp from the name (<code>_slab2_<q>_<date>.grd -> ..._<q>.grd).
+    pattern = re.compile(
+        r"^(" + "|".join(todo) + r")_slab2_(" + "|".join(quantities)
+        + r")_.*\.grd$")
+    with tarfile.open(SLAB2_TAR, "r:gz") as tar:
+        for member in tar:
+            m = pattern.match(os.path.basename(member.name))
+            if not m or not member.isfile():
                 continue
-            url = (f"https://www.sciencebase.gov/catalog/file/get/{item}"
-                   f"?name={code}_slab2_{q}_{date}.grd")
-            if not download(url, local, f"{code}_{q}"):
-                print(f"[Slab2]   Download fehlgeschlagen: {code}_{q}",
-                      file=sys.stderr)
+            local = os.path.join(DATA, f"{m[1]}_slab2_{m[2]}.grd")
+            with tar.extractfile(member) as src, open(local, "wb") as dst:
+                dst.write(src.read())
+            print(f"  {os.path.relpath(local, ROOT)}: "
+                  f"{member.size / 1e6:.1f} MB")
 
-    have = sum(1 for c in SLAB2_REGIONS if complete(c))
+    os.remove(SLAB2_TAR)
+    have = sum(1 for c in SLAB2_CODES if complete(c))
     if have == 0:
         sys.exit("[Slab2] Keine Region verfügbar.")
-    print(f"[Slab2] Bereit: {have}/{len(SLAB2_REGIONS)} Regionen.")
+    print(f"[Slab2] Bereit: {have}/{len(SLAB2_CODES)} Regionen.")
 
 
 def main():
