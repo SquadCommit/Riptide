@@ -70,3 +70,6 @@ build-docker/
 web/node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
+
+# Python bytecode
+__pycache__/
