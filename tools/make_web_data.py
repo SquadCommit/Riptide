@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Extracts the static demo grids for the web build from the local GEBCO file.
+Missing datasets (GEBCO, Slab2) are downloaded first via fetch_data.py.
 
 Writes web/public/data/ (gitignored):
   globe.bin        whole world, ~4320 samples wide  (globe view + coarse
@@ -150,8 +151,9 @@ def write_slab2():
 
 
 def main():
-    if not os.path.exists(GEBCO):
-        sys.exit(f"GEBCO-Datei nicht gefunden: {GEBCO}")
+    import fetch_data
+    fetch_data.ensure_gebco()
+    fetch_data.ensure_slab2()
     os.makedirs(OUT, exist_ok=True)
     nc = Dataset(GEBCO, "r")
 

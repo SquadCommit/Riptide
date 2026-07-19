@@ -31,19 +31,15 @@ Everything below assumes these one-time steps are done.
 
        git config core.hooksPath .githooks
 
-3. Provide the datasets under ``data/`` (not in the repo, ~7 GB):
-
-   - ``data/GEBCO_2026.nc`` — GEBCO ice-surface global grid, 15 arc-sec.
-     Download the NetCDF zip from BODC/CEDA
-     (https://www.gebco.net/data_and_products/gridded_bathymetry_data/)
-     and unzip it into ``data/``.
-   - ``data/<code>_slab2_{dep,str,dip}.grd`` — USGS Slab2 subduction
-     grids (https://www.sciencebase.gov/catalog/item/5aa1b00ee4b0b1c392e86467).
-     The native solver CLI downloads them automatically on first run;
-     manual download works too.
-
-4. Install **Docker** (recommended path below) — or the local toolchains
+3. Install **Docker** (recommended path below) — or the local toolchains
    listed in `Working without Docker`_.
+
+The datasets under ``data/`` (not in the repo, ~7 GB) are downloaded
+automatically by the ``data`` step on first run — GEBCO ice-surface
+global grid (BODC/CEDA, ~4.3 GB zip) and the USGS Slab2 subduction
+grids (ScienceBase, ~30 MB). An interrupted download resumes on the
+next run. Nothing to do manually; ``tools/fetch_data.py`` also works
+standalone.
 
 *******************************
 Run the web app (Docker)
@@ -53,7 +49,7 @@ Four steps, in this order — later steps consume the artifacts of
 earlier ones::
 
     docker compose run --rm web-build   # 1. C++ -> wasm     -> web/public/wasm/
-    docker compose run --rm data        # 2. GEBCO/Slab2     -> web/public/data/
+    docker compose run --rm data        # 2. GEBCO/Slab2 (auto-download) -> web/public/data/
     docker compose run --rm frontend    # 3. React build     -> web/dist/
     docker compose up serve             # 4. http://localhost:8080
 

@@ -2,7 +2,7 @@
 #
 #   docker compose run --rm native      # build solver CLI + run unit tests
 #   docker compose run --rm web-build   # build the wasm/WebGL2 bundle
-#   docker compose run --rm data        # extract demo grids from data/GEBCO_2026.nc
+#   docker compose run --rm data        # fetch missing datasets, extract web grids
 #   docker compose run --rm frontend    # build the React app into web/dist
 #   docker compose run --rm docs        # build the sphinx documentation
 #   docker compose up serve             # serve web/dist at http://localhost:8080
