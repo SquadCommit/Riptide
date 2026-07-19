@@ -12,6 +12,9 @@ const isolationHeaders = {
 };
 
 export default defineConfig({
+  // Relative asset URLs so the build also works from a sub-path
+  // (GitHub Pages serves at /<repo>/).
+  base: "./",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },

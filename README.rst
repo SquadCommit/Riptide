@@ -56,6 +56,14 @@ earlier ones::
 Step 3 copies ``web/public/`` (wasm + data) into ``web/dist/`` — that is
 why it must run last.
 
+**Public hosting:** every push to ``webapp`` deploys the app to GitHub
+Pages via ``.github/workflows/deploy.yml`` (one-time repo setup:
+*Settings → Pages → Source: GitHub Actions*). Pages cannot send the
+COOP/COEP isolation headers the pthreads build needs, so the page
+retrofits them at runtime through the vendored
+``web/public/coi-serviceworker.min.js`` — expect one automatic reload
+on the very first visit.
+
 When something changes, rebuild only what is affected:
 
 ===============================  =========================================

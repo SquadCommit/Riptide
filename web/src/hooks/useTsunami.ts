@@ -8,6 +8,10 @@ import {
   type TsunamiModule,
 } from "@/lib/tsunami";
 
+// Resolves the data grids relative to wherever the app is served from
+// ("/" in dev, "./" in the build — GitHub Pages hosts at /<repo>/).
+const DATA_BASE = import.meta.env.BASE_URL + "data/";
+
 // React StrictMode double-invokes effects in dev; the emscripten module
 // (and its pthread pool) must only ever be created once.
 let modulePromise: Promise<TsunamiModule> | null = null;
@@ -44,7 +48,7 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
         const mod = await getModule();
         if (cancelled) return;
         setBoot({ phase: "loading", detail: "Welt-Bathymetrie (GEBCO) …" });
-        const globe = await fetchBytes("/data/globe.bin.gz");
+        const globe = await fetchBytes(DATA_BASE + "globe.bin.gz");
         if (cancelled) return;
 
         setBoot({ phase: "loading", detail: "Renderer startet …" });
@@ -67,7 +71,7 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
 
         // Subduction zones stream in after boot — the app is usable
         // without them; overlay + real fault geometry appear once parsed.
-        fetchBytes("/data/slab2.bin.gz")
+        fetchBytes(DATA_BASE + "slab2.bin.gz")
           .then((b) =>
             withHeapBytes(mod, b, (p, n) => mod.loadSlab2Bytes(p, n)),
           )
@@ -136,7 +140,7 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
     if (!mod) return;
     setScenarioLoading(idx);
     try {
-      const bytes = await fetchBytes(`/data/scenario_${idx}.bin.gz`);
+      const bytes = await fetchBytes(`${DATA_BASE}scenario_${idx}.bin.gz`);
       withHeapBytes(mod, bytes, (p, n) => mod.loadScenarioBytes(idx, p, n));
     } catch (e) {
       console.error(e);

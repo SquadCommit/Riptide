@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tsunami Lab</title>
+    <!-- Retrofits the COOP/COEP isolation headers via a service worker on
+         hosts that cannot send them (GitHub Pages); no-op when the server
+         already sends them (serve.py, vite dev/preview). Must load first. -->
+    <script src="/coi-serviceworker.min.js"></script>
     <!-- MODULARIZE'd emscripten bundle: exposes global createTsunamiModule() -->
     <script src="/wasm/tsunami_web.js"></script>
   </head>
