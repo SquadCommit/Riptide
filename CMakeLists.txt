@@ -4,6 +4,18 @@ project(tsunami_lab CXX C)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ---------- third-party dependencies (fetched at configure time) ----------
+# Pinned to exact commits; downloaded once into <build>/_deps and cached.
+include(FetchContent)
+FetchContent_Declare(glm            # 1.0.x master @ 0af55cce
+  URL https://github.com/g-truc/glm/archive/0af55ccecd98d4e5a8d1fad7de25ba429d60e863.tar.gz)
+FetchContent_Declare(pugixml        # v1.15 + fixes @ 06321884
+  URL https://github.com/zeux/pugixml/archive/063218842544de8095ea1b7419b28df02866c20a.tar.gz)
+FetchContent_Declare(Catch2         # v2.13.10
+  URL https://github.com/catchorg/Catch2/archive/refs/tags/v2.13.10.tar.gz)
+# header-only glm::glm, nothing to compile (cache var: glm pins CMP0077 to OLD)
+set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)
+
 # ---------- build options (replicate SConstruct variables) ----------
 set(BUILD_MODE "release" CACHE STRING "release | debug | release+san | debug+san")
 set(OPT_LEVEL  "o2"      CACHE STRING "o2 | o3 | ofast")
@@ -82,6 +94,7 @@ endif()
 # Produces web/public/wasm/tsunami_web.{js,wasm,worker.js}; serve web/ with
 # COOP/COEP headers (see web/serve.py) — pthreads need SharedArrayBuffer.
 if(EMSCRIPTEN)
+  FetchContent_MakeAvailable(glm)   # web build needs only glm
   add_executable(tsunami_web
     src/web/AppWeb.cpp
     src/web/WebData.cpp
@@ -93,7 +106,8 @@ if(EMSCRIPTEN)
     src/io/Slab2Query.cpp
     src/web/Slab2Web.cpp
   )
-  target_include_directories(tsunami_web PRIVATE src submodules/glm)
+  target_include_directories(tsunami_web PRIVATE src)
+  target_link_libraries(tsunami_web PRIVATE glm::glm)
   target_compile_definitions(tsunami_web PRIVATE
     SHADER_DIR="/shaders")         # virtual FS path of the embedded shaders
   target_compile_options(tsunami_web PRIVATE -pthread)
@@ -132,11 +146,10 @@ execute_process(COMMAND ${NC_CONFIG} --prefix
 set(NETCDF_INCLUDE "${NETCDF_PREFIX}/include")
 set(NETCDF_LIBDIR  "${NETCDF_PREFIX}/lib")
 
-# ---------- submodules ----------
-add_subdirectory(submodules/pugixml  EXCLUDE_FROM_ALL)
+# ---------- third-party (native build) ----------
+FetchContent_MakeAvailable(pugixml Catch2)
 # Suppress global -Werror for pugixml so unknown/irrelevant warnings don't break the build
 target_compile_options(pugixml-static PRIVATE -w)
-add_subdirectory(submodules/Catch2   EXCLUDE_FROM_ALL)
 
 # ---------- solver library ----------
 add_library(solver_lib STATIC
@@ -200,5 +213,4 @@ add_executable(tests
   src/io/stations/Stations.test.cpp
   src/io/netcdf/NetCDF.test.cpp
 )
-target_include_directories(tests PRIVATE submodules/Catch2/single_include)
-target_link_libraries(tests PRIVATE solver_lib)
+target_link_libraries(tests PRIVATE solver_lib Catch2::Catch2)

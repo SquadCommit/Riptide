@@ -22,11 +22,10 @@ First-time setup
 
 Everything below assumes these one-time steps are done.
 
-1. Clone **including submodules** (Catch2, pugixml, glm)::
+1. Clone the repository (third-party libraries — Catch2, pugixml, glm —
+   are downloaded automatically by CMake at configure time)::
 
-       git clone --recurse-submodules <repo-url>
-       # or, after a plain clone:
-       git submodule update --init
+       git clone <repo-url>
 
 2. Enable the pre-commit hooks (style check + unit tests)::
 

@@ -29,8 +29,6 @@ jobs:
           sudo apt-get install -y valgrind
           sudo apt-get install -y cppcheck
           sudo apt-get install -y libnetcdf-dev netcdf-bin
-          git submodule init
-          git submodule update
 
       - name: Style Check
         run: |
