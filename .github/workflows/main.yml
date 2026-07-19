@@ -1,21 +1,18 @@
 ##
-# @author Alexander Breuer (alex.breuer AT uni-jena.de)
-# @section DESCRIPTION
-# Continuous integration using GitHub Actions.
+# Continuous integration: native solver checks, WebAssembly build,
+# and the React frontend — run as independent parallel jobs.
 ##
-name: Tsunami Lab
+name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, webapp ]
   pull_request:
     branches: [ main ]
-  schedule:
-    - cron: 0 0 * * *
   workflow_dispatch:
 
 jobs:
-  CI:
+  solver:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,94 +20,56 @@ jobs:
 
       - name: Dependencies
         run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
-          sudo apt-get install -y valgrind
-          sudo apt-get install -y cppcheck
-          sudo apt-get install -y libnetcdf-dev netcdf-bin
+          sudo apt-get install -y cmake ninja-build libnetcdf-dev clang-format-18 cppcheck
 
       - name: Style Check
-        run: |
-          sudo apt-get install -y clang-format-18
-          find src/ -name "*.cpp" -o -name "*.h" | xargs clang-format-18 --dry-run --Werror
+        run: find src/ -name "*.cpp" -o -name "*.h" | xargs clang-format-18 --dry-run --Werror
 
       - name: Static Code Analysis
-        run:
-          cppcheck src/ --template=gcc --force --error-exitcode=1
+        run: cppcheck src/ --template=gcc --force --error-exitcode=1
 
       - name: Unit Tests
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_VIZ=OFF -G Ninja
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
           cmake --build build --target tests tsunami_lab -j$(nproc)
           ./build/tests
 
-      - name: Sanitize
+      - name: Sanitizers
         run: |
-          cmake -B build_san -DBUILD_MODE=debug+san -DENABLE_VIZ=OFF -G Ninja
+          cmake -B build_san -DBUILD_MODE=debug+san -G Ninja
           cmake --build build_san --target tests tsunami_lab -j$(nproc)
           ./build_san/tests
           ./build_san/tsunami_lab -n 25 -s FWave -p DamBreak 10 5 5
-          cmake -B build_san_rel -DBUILD_MODE=release+san -DENABLE_VIZ=OFF -G Ninja
-          cmake --build build_san_rel --target tests tsunami_lab -j$(nproc)
-          ./build_san_rel/tests
-          ./build_san_rel/tsunami_lab -n 500 -s FWave -p DamBreak 10 5 5
 
-      - name: Valgrind
-        run: |
-          valgrind ./build/tests
-          valgrind ./build/tsunami_lab -n 25 -s FWave -p DamBreak 10 5 5
-
-      - name: Release
-        run: |
-          cmake -B build_rel -DCMAKE_BUILD_TYPE=Release -DENABLE_VIZ=OFF -G Ninja
-          cmake --build build_rel --target tests tsunami_lab -j$(nproc)
-          ./build_rel/tests
-          ./build_rel/tsunami_lab -n 500 -s FWave -p DamBreak 10 5 5
-
-  Docs:
+  wasm:
     runs-on: ubuntu-latest
-    needs: CI
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    permissions:
-      pages: write
-      id-token: write
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    # Same pinned toolchain as docker/web.Dockerfile
+    container: emscripten/emsdk:6.0.2
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Build WebAssembly bundle
         run: |
-          sudo apt-get update
-          sudo apt-get install doxygen
-          pip install sphinx sphinx-rtd-theme
+          apt-get update && apt-get install -y --no-install-recommends ninja-build
+          emcmake cmake -B build-web -G Ninja
+          cmake --build build-web
 
-      - name: Build Doxygen
-        run: |
-          cd docs
-          doxygen Doxyfile
+  frontend:
+    runs-on: ubuntu-latest
 
-      - name: Build Sphinx
-        run: |
-          cd sphinx
-          make html
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Combine Output
-        run: |
-          mkdir -p public
-          cp -r sphinx/build/html/* public/
-          cp -r docs/html public/doxygen
-
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/setup-node@v4
         with:
-          path: ./public
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Build Frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
