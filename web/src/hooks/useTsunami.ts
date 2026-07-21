@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { hexToRgb01, stationColor } from "@/lib/stationColor";
 import {
   fetchBytes,
   tileUrlsForBbox,
@@ -7,6 +8,7 @@ import {
   withHeapBytesMulti,
   type AppSnapshot,
   type Scenario,
+  type Station,
   type TsunamiModule,
 } from "@/lib/tsunami";
 
@@ -42,6 +44,7 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [scenarioLoading, setScenarioLoading] = useState<number | null>(null);
   const [selectionLoading, setSelectionLoading] = useState(false);
+  const [stations, setStations] = useState<Station[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +125,23 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
     return () => window.clearInterval(id);
   }, [boot.phase]);
 
+  // Station (gauge) polling: separate from the 100 ms getState() poll and
+  // slower (1 Hz) since it re-serializes every recorded sample of every
+  // station on each call — fine for a chart redraw, wasteful at 10 Hz.
+  useEffect(() => {
+    if (boot.phase !== "ready") return;
+    const id = window.setInterval(() => {
+      const mod = modRef.current;
+      if (!mod) return;
+      const s = mod.getStations();
+      setStations(s);
+      mod.setStationMarkers(
+        s.map(({ lon, lat, name }) => ({ lon, lat, ...hexToRgb01(stationColor(name)) })),
+      );
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [boot.phase]);
+
   // Canvas resize.
   useEffect(() => {
     if (boot.phase !== "ready" || !viewRef.current) return;
@@ -182,6 +202,35 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
     }
   }, []);
 
+  const togglePlacingStation = useCallback((v: boolean) => {
+    modRef.current?.setPlacingStation(v);
+  }, []);
+
+  const removeStation = useCallback((idx: number) => {
+    modRef.current?.removeStation(idx);
+    // Reflects the removal immediately instead of waiting up to 1s for the
+    // next poll — every other station's history was just reset too (see
+    // rebuildSimStations() in AppWeb.cpp), so a stale interim frame would
+    // otherwise show data that's about to disappear.
+    const mod = modRef.current;
+    if (!mod) return;
+    const s = mod.getStations();
+    setStations(s);
+    mod.setStationMarkers(
+      s.map(({ lon, lat, name }) => ({ lon, lat, ...hexToRgb01(stationColor(name)) })),
+    );
+  }, []);
+
+  const renameStation = useCallback((idx: number, name: string) => {
+    modRef.current?.renameStation(idx, name);
+  }, []);
+
+  const clearStations = useCallback(() => {
+    modRef.current?.clearStations();
+    modRef.current?.setStationMarkers([]);
+    setStations([]);
+  }, []);
+
   return {
     mod: modRef,
     boot,
@@ -191,5 +240,10 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
     loadScenario,
     selectionLoading,
     loadSelection,
+    stations,
+    togglePlacingStation,
+    removeStation,
+    renameStation,
+    clearStations,
   };
 }

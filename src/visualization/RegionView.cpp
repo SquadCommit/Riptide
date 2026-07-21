@@ -4,6 +4,7 @@
 #include "io/Slab2Reader.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <thread>
 #include <vector>
 
@@ -32,6 +33,35 @@ void main() {
 }
 )";
 
+// Inline shader for station (gauge) markers: flat-coloured verts, drawn once
+// as GL_LINES (the pole) and once as GL_POINTS (a round cap at the top) —
+// uCircle switches the point-only circular mask so it's never evaluated
+// (gl_PointCoord is only meaningful for GL_POINTS) during the line draw.
+static const char* k_stationVert = R"(#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aColor;
+uniform mat4 uVP;
+out vec3 vColor;
+void main() {
+    vColor = aColor;
+    gl_Position = uVP * vec4(aPos, 1.0);
+    gl_PointSize = 9.0;
+}
+)";
+
+static const char* k_stationFrag = R"(#version 330 core
+in vec3 vColor;
+uniform bool uCircle;
+out vec4 fragColor;
+void main() {
+    if (uCircle) {
+        vec2 d = gl_PointCoord - vec2(0.5);
+        if (dot(d, d) > 0.25) discard;
+    }
+    fragColor = vec4(vColor, 1.0);
+}
+)";
+
 void RegionView::init() {
   m_terrShader.buildFromFiles(SHADER_DIR "/region_terrain.vert",
                               SHADER_DIR "/region_terrain.frag");
@@ -40,6 +70,7 @@ void RegionView::init() {
   m_waterShader.buildFromFiles(SHADER_DIR "/region_water.vert",
                                SHADER_DIR "/region_water.frag");
   m_overlayShader.build(k_overlayVert, k_overlayFrag);
+  m_stationShader.build(k_stationVert, k_stationFrag);
 
   const float k_s = 100.0f;
   const float l_quad[8] = {-k_s, -k_s, k_s, -k_s, -k_s, k_s, k_s, k_s};
@@ -51,6 +82,58 @@ void RegionView::init() {
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
   glEnableVertexAttribArray(0);
   glBindVertexArray(0);
+
+  auto l_initStationVao = [](GLuint& io_vao, GLuint& io_vbo) {
+    glGenVertexArrays(1, &io_vao);
+    glGenBuffers(1, &io_vbo);
+    glBindVertexArray(io_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, io_vbo);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+                          nullptr);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+                          (const void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+  };
+  l_initStationVao(m_stationLineVao, m_stationLineVbo);
+  l_initStationVao(m_stationPointVao, m_stationPointVbo);
+}
+
+void RegionView::setStationMarkers(const std::vector<StationMarker>& i_markers) {
+  m_stationCount = (int)i_markers.size();
+  if (m_stationCount == 0)
+    return;
+
+  // 2 vertices (base, top) per marker for the pole.
+  std::vector<float> l_lines((size_t)m_stationCount * 2 * 6);
+  // 1 vertex (top) per marker for the cap.
+  std::vector<float> l_points((size_t)m_stationCount * 6);
+  for (int l_i = 0; l_i < m_stationCount; l_i++) {
+    const StationMarker& l_m = i_markers[(size_t)l_i];
+    float* l_base = &l_lines[(size_t)l_i * 12];
+    l_base[0] = l_m.worldX;
+    l_base[1] = 0.0f;
+    l_base[2] = l_m.worldZ;
+    l_base[3] = l_m.r;
+    l_base[4] = l_m.g;
+    l_base[5] = l_m.b;
+    float* l_top = l_base + 6;
+    l_top[0] = l_m.worldX;
+    l_top[1] = k_stationHeight;
+    l_top[2] = l_m.worldZ;
+    l_top[3] = l_m.r;
+    l_top[4] = l_m.g;
+    l_top[5] = l_m.b;
+    std::memcpy(&l_points[(size_t)l_i * 6], l_top, 6 * sizeof(float));
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, m_stationLineVbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(l_lines.size() * sizeof(float)),
+               l_lines.data(), GL_DYNAMIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, m_stationPointVbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(l_points.size() * sizeof(float)),
+               l_points.data(), GL_DYNAMIC_DRAW);
 }
 
 bool RegionView::load(const gebco::Region& i_region) {
@@ -58,6 +141,11 @@ bool RegionView::load(const gebco::Region& i_region) {
   const int l_h = i_region.h;
   if (l_w < 2 || l_h < 2)
     return false;
+
+  // Any station markers belonged to whatever region was loaded before —
+  // drop them immediately instead of leaving them positioned against the
+  // outgoing region's world scale until the frontend's next station poll.
+  m_stationCount = 0;
 
   lonMin = i_region.lonMin;
   lonMax = i_region.lonMax;
@@ -667,6 +755,21 @@ void RegionView::draw(const glm::mat4& i_vp, const glm::vec3& i_camPos) const {
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
   }
+
+  // Station (gauge) markers: drawn last, depth-tested against the terrain so
+  // a station on the far slope of the terrain is correctly hidden.
+  if (m_stationCount > 0) {
+    m_stationShader.use();
+    m_stationShader.setMat4("uVP", i_vp);
+    glLineWidth(2.0f);
+    m_stationShader.setInt("uCircle", 0);
+    glBindVertexArray(m_stationLineVao);
+    glDrawArrays(GL_LINES, 0, m_stationCount * 2);
+    m_stationShader.setInt("uCircle", 1);
+    glBindVertexArray(m_stationPointVao);
+    glDrawArrays(GL_POINTS, 0, m_stationCount);
+    glBindVertexArray(0);
+  }
 }
 
 RegionView::~RegionView() {
@@ -693,6 +796,14 @@ RegionView::~RegionView() {
     glDeleteBuffers(1, &m_waterVbBath);
     glDeleteBuffers(1, &m_waterVbH);
     glDeleteBuffers(k_maxLod, m_waterEbos);
+  }
+  if (m_stationLineVao) {
+    glDeleteVertexArrays(1, &m_stationLineVao);
+    glDeleteBuffers(1, &m_stationLineVbo);
+  }
+  if (m_stationPointVao) {
+    glDeleteVertexArrays(1, &m_stationPointVao);
+    glDeleteBuffers(1, &m_stationPointVbo);
   }
 }
 

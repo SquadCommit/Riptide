@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import type { AppSnapshot, TsunamiModule } from "@/lib/tsunami";
+import { StationsPanel } from "@/components/StationsPanel";
+import type { AppSnapshot, Station, TsunamiModule } from "@/lib/tsunami";
 import { cn } from "@/lib/utils";
 
 const log10 = { to: (v: number) => Math.log10(Math.max(1, v)) };
@@ -51,9 +52,19 @@ function SwitchRow({
 export function RegionPanel({
   mod,
   snapshot,
+  stations,
+  togglePlacingStation,
+  removeStation,
+  renameStation,
+  clearStations,
 }: {
   mod: React.RefObject<TsunamiModule | null>;
   snapshot: AppSnapshot;
+  stations: Station[];
+  togglePlacingStation: (v: boolean) => void;
+  removeStation: (idx: number) => void;
+  renameStation: (idx: number, name: string) => void;
+  clearStations: () => void;
 }) {
   const m = mod.current;
   const r = snapshot.region!;
@@ -279,6 +290,17 @@ export function RegionPanel({
             </Button>
           )}
         </div>
+
+        <Separator />
+
+        <StationsPanel
+          snapshot={snapshot}
+          stations={stations}
+          togglePlacingStation={togglePlacingStation}
+          removeStation={removeStation}
+          renameStation={renameStation}
+          clearStations={clearStations}
+        />
 
         {snapshot.error && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">

@@ -22,9 +22,22 @@ export interface Scenario {
   epiLat: number;
 }
 
+export interface StationSample {
+  t: number; // simulated seconds since the quake
+  eta: number; // sea-surface anomaly (h + b), metres
+}
+
+export interface Station {
+  name: string;
+  lon: number;
+  lat: number;
+  series: StationSample[];
+}
+
 export interface AppSnapshot {
   state: "globe" | "region";
   error: string;
+  placingStation: boolean;
   selection: {
     has: boolean;
     lonMin?: number;
@@ -111,6 +124,15 @@ export interface TsunamiModule {
   setMw(v: number): void;
   commitMw(): void;
   clearQuake(): void;
+  setPlacingStation(v: boolean): void;
+  addStation(lon: number, lat: number): number;
+  renameStation(idx: number, name: string): void;
+  removeStation(idx: number): void;
+  clearStations(): void;
+  getStations(): Station[];
+  setStationMarkers(
+    markers: { lon: number; lat: number; r: number; g: number; b: number }[],
+  ): void;
   setField(v: number): void;
   setVertExaggeration(v: number): void;
   setWaveExaggeration(v: number): void;

@@ -112,6 +112,26 @@ static float g_simCellSize = 1000.0f;
 static float g_simSpeed = 120.0f;
 static bool g_simAutoSpeed = false;
 
+// Geographic bounds/dims of the grid the *current* g_sim was built over —
+// needed to map a station's lon/lat to solver cell indices, both when
+// (re)starting a run and when a station is added while one is live.
+struct SimGeo {
+  double lonMin = 0, lonMax = 0, latMin = 0, latMax = 0;
+  tsunami_lab::t_idx nx = 0, ny = 0;
+};
+static SimGeo g_simGeo;
+
+// Virtual gauges (name/lon/lat); recorded values live in g_sim, index-aligned
+// 1:1 with this list (see rebuildSimStations()). Survive across sim restarts.
+struct StationDef {
+  std::string name;
+  double lon, lat;
+};
+static std::vector<StationDef> g_stations;
+// Next canvas click in REGION_PREVIEW places a station instead of moving the
+// epicentre; cleared after one placement (see setPlacingStation()).
+static bool g_placingStation = false;
+
 static double g_lastFrameTime = 0.0;
 static bool g_booted = false;
 
@@ -296,7 +316,11 @@ static bool buildSimSetup(tsunami_lab::t_idx& o_nx,
                           tsunami_lab::t_idx& o_ny,
                           float& o_dxy,
                           std::vector<float>& o_bath,
-                          std::vector<float>& o_height) {
+                          std::vector<float>& o_height,
+                          double& o_lonMin,
+                          double& o_lonMax,
+                          double& o_latMin,
+                          double& o_latMax) {
   using namespace tsunami_lab;
 
   if (!g_loadedSel.valid())
@@ -306,6 +330,10 @@ static bool buildSimSetup(tsunami_lab::t_idx& o_nx,
   if (!gv::gebco::readRegion("web", g_loadedSel, l_src, 2048) || l_src.w < 2 ||
       l_src.h < 2)
     return false;
+  o_lonMin = l_src.lonMin;
+  o_lonMax = l_src.lonMax;
+  o_latMin = l_src.latMin;
+  o_latMax = l_src.latMax;
 
   const double l_latC = 0.5 * (l_src.latMin + l_src.latMax);
   const double l_mPerLat = 111132.0;
@@ -392,6 +420,72 @@ static bool buildSimSetup(tsunami_lab::t_idx& o_nx,
   return true;
 }
 
+// Maps a lon/lat to the nearest cell of the *current* g_sim grid (g_simGeo),
+// clamped to the grid — a station is always placed by clicking the loaded
+// terrain, so it is expected to fall inside, but clamping keeps this total
+// (no invalid-index case to reject) rather than dropping the station.
+static void lonLatToStationCell(double i_lon,
+                                double i_lat,
+                                tsunami_lab::t_idx& o_ix,
+                                tsunami_lab::t_idx& o_iy) {
+  using namespace tsunami_lab;
+  double l_fx = (g_simGeo.lonMax > g_simGeo.lonMin)
+                    ? (i_lon - g_simGeo.lonMin) /
+                          (g_simGeo.lonMax - g_simGeo.lonMin) *
+                          (double)(g_simGeo.nx - 1)
+                    : 0.0;
+  double l_fy = (g_simGeo.latMax > g_simGeo.latMin)
+                    ? (i_lat - g_simGeo.latMin) /
+                          (g_simGeo.latMax - g_simGeo.latMin) *
+                          (double)(g_simGeo.ny - 1)
+                    : 0.0;
+  l_fx = std::min(std::max(l_fx, 0.0), (double)(g_simGeo.nx - 1));
+  l_fy = std::min(std::max(l_fy, 0.0), (double)(g_simGeo.ny - 1));
+  o_ix = (t_idx)std::lround(l_fx);
+  o_iy = (t_idx)std::lround(l_fy);
+}
+
+// Re-registers every station with g_sim in g_stations order, so indices stay
+// 1:1 aligned (see StationDef comment). Used after removal — the trade-off
+// is that removing one station resets every other station's recorded
+// history too, which keeps this simple; adding a station never does.
+static void rebuildSimStations() {
+  if (!g_sim)
+    return;
+  g_sim->clearStations();
+  for (const StationDef& l_st : g_stations) {
+    tsunami_lab::t_idx l_ix, l_iy;
+    lonLatToStationCell(l_st.lon, l_st.lat, l_ix, l_iy);
+    g_sim->addStation(l_ix, l_iy);
+  }
+}
+
+// Adds a station at (i_lon, i_lat); auto-names it if i_name is empty.
+// Registers immediately with a live g_sim (keeping the 1:1 index alignment);
+// otherwise the station is picked up the next time startSimulation() runs.
+// Returns the new station's index.
+static int addStationAtLonLat(std::string i_name, double i_lon, double i_lat) {
+  if (i_name.empty())
+    i_name = "Station " + std::to_string(g_stations.size() + 1);
+  g_stations.push_back({std::move(i_name), i_lon, i_lat});
+  if (g_sim && g_simGeo.nx >= 2 && g_simGeo.ny >= 2) {
+    tsunami_lab::t_idx l_ix, l_iy;
+    lonLatToStationCell(i_lon, i_lat, l_ix, l_iy);
+    g_sim->addStation(l_ix, l_iy);
+  }
+  return (int)g_stations.size() - 1;
+}
+
+static void placeStationAtScreen(float i_mx, float i_my) {
+  if (!g_regionView || !g_regionView->loaded())
+    return;
+  const glm::vec2 l_world =
+      regionUnproject(i_mx, i_my, g_screenW, g_screenH, g_camera);
+  double l_lon = 0.0, l_lat = 0.0;
+  g_regionView->worldToLonLat(l_world.x, l_world.y, l_lon, l_lat);
+  addStationAtLonLat("", l_lon, l_lat);
+}
+
 static void stopSimulation() {
   if (g_sim) {
     g_sim->stop();
@@ -410,13 +504,16 @@ static void startSimulation() {
   t_idx l_nx = 0, l_ny = 0;
   float l_dxy = 0.0f;
   std::vector<float> l_bath, l_height;
-  if (!buildSimSetup(l_nx, l_ny, l_dxy, l_bath, l_height)) {
+  double l_lonMin = 0, l_lonMax = 0, l_latMin = 0, l_latMax = 0;
+  if (!buildSimSetup(l_nx, l_ny, l_dxy, l_bath, l_height, l_lonMin, l_lonMax,
+                     l_latMin, l_latMax)) {
     g_regionError = "Simulation: Bathymetrie-Setup fehlgeschlagen.";
     return;
   }
 
   g_simBuf.reset(new gv::SimBuffer(l_nx, l_ny));
   g_sim.reset(new gv::SolverThread(*g_simBuf, l_nx, l_ny, l_dxy));
+  g_simGeo = {l_lonMin, l_lonMax, l_latMin, l_latMax, l_nx, l_ny};
 
   patches::WavePropagation2d& l_solver = g_sim->solver();
   for (t_idx l_j = 0; l_j < l_ny; l_j++)
@@ -430,6 +527,7 @@ static void startSimulation() {
 
   if (g_regionView)
     g_regionView->beginSimulation(l_nx, l_ny, l_bath.data());
+  rebuildSimStations();
   g_sim->setTimeScale(g_simSpeed);
   g_sim->start();
 }
@@ -543,10 +641,16 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent* i_e, void*) {
           g_globeView->setSelection(
               suggestSlabSelection(l_lon, l_lat, g_globeView->maxSelDeg));
       }
-    } else if (g_state == AppState::REGION_PREVIEW && g_dragDist < 5.0f &&
-               !simRunning()) {
-      // Released without dragging: treat as a click and pick an epicentre.
-      onRegionClick((float)g_lastX, (float)g_lastY);
+    } else if (g_state == AppState::REGION_PREVIEW && g_dragDist < 5.0f) {
+      if (g_placingStation) {
+        // Station placement is allowed while a sim is running (watch a new
+        // gauge from here on); the epicentre below is not.
+        placeStationAtScreen((float)g_lastX, (float)g_lastY);
+        g_placingStation = false;
+      } else if (!simRunning()) {
+        // Released without dragging: treat as a click and pick an epicentre.
+        onRegionClick((float)g_lastX, (float)g_lastY);
+      }
     }
   }
   if (i_e->button == 1)
@@ -861,6 +965,11 @@ static void backToGlobe() {
   if (g_dispComputing)
     return; // displacement worker still reads the current grid
   stopSimulation();
+  // Stations are anchored to the region just left (lon/lat that may not
+  // even fall inside whatever gets loaded next) — drop them along with the
+  // sim state rather than carrying stale gauges into an unrelated region.
+  g_stations.clear();
+  g_placingStation = false;
   g_state = AppState::REGION_SELECT;
   setCameraGlobeView(g_camera);
 }
@@ -916,6 +1025,84 @@ static void clearQuake() {
     return;
   g_regionView->clearDisplacement();
   g_displModel.reset();
+}
+
+// Virtual gauges (stations)
+
+// Arms/disarms "next canvas click places a station" (see onMouseUp).
+static void setPlacingStation(bool i_v) { g_placingStation = i_v; }
+
+// Adds a station directly at (i_lon, i_lat) — used by the panel's own "add
+// at current epicentre" shortcut, distinct from click-to-place on the map.
+static int addStation(double i_lon, double i_lat) {
+  return addStationAtLonLat("", i_lon, i_lat);
+}
+
+static void renameStation(int i_idx, std::string i_name) {
+  if (i_idx >= 0 && (size_t)i_idx < g_stations.size() && !i_name.empty())
+    g_stations[(size_t)i_idx].name = std::move(i_name);
+}
+
+static void removeStation(int i_idx) {
+  if (i_idx < 0 || (size_t)i_idx >= g_stations.size())
+    return;
+  g_stations.erase(g_stations.begin() + i_idx);
+  rebuildSimStations();
+}
+
+static void clearStations() {
+  g_stations.clear();
+  if (g_sim)
+    g_sim->clearStations();
+}
+
+// All stations with their full recorded series so far — polled by the panel
+// at a slower cadence than getState() (see useTsunami.ts), since this
+// serializes every sample of every gauge each call.
+static emscripten::val getStations() {
+  using emscripten::val;
+  val l_arr = val::array();
+  for (size_t l_i = 0; l_i < g_stations.size(); l_i++) {
+    val l_o = val::object();
+    l_o.set("name", g_stations[l_i].name);
+    l_o.set("lon", g_stations[l_i].lon);
+    l_o.set("lat", g_stations[l_i].lat);
+    val l_series = val::array();
+    if (g_sim) {
+      const auto l_pts = g_sim->stationSeries(l_i);
+      for (size_t l_k = 0; l_k < l_pts.size(); l_k++) {
+        val l_pt = val::object();
+        l_pt.set("t", (double)l_pts[l_k].time);
+        l_pt.set("eta", (double)l_pts[l_k].eta);
+        l_series.set((unsigned)l_k, l_pt);
+      }
+    }
+    l_o.set("series", l_series);
+    l_arr.set((unsigned)l_i, l_o);
+  }
+  return l_arr;
+}
+
+// Pushes the JS-computed colour (see stationColor() in
+// web/src/lib/stationColor.ts, the single source of truth so the chart
+// legend and the 3d marker always agree) for every station's 3d marker.
+// i_markers: array of {lon, lat, r, g, b} (r/g/b in 0..1) — self-contained,
+// not index-matched against g_stations, so it can't desync with it.
+static void setStationMarkers(emscripten::val i_markers) {
+  if (!g_regionView)
+    return;
+  std::vector<gv::RegionView::StationMarker> l_markers;
+  const int l_n = i_markers["length"].as<int>();
+  l_markers.reserve((size_t)l_n);
+  for (int l_i = 0; l_i < l_n; l_i++) {
+    const emscripten::val l_m = i_markers[l_i];
+    float l_wx = 0.0f, l_wz = 0.0f;
+    g_regionView->lonLatToWorld(l_m["lon"].as<double>(),
+                                l_m["lat"].as<double>(), l_wx, l_wz);
+    l_markers.push_back({l_wx, l_wz, l_m["r"].as<float>(),
+                         l_m["g"].as<float>(), l_m["b"].as<float>()});
+  }
+  g_regionView->setStationMarkers(l_markers);
 }
 
 static void setField(int i_field) {
@@ -987,6 +1174,7 @@ static emscripten::val getState() {
   o.set("state", g_state == AppState::REGION_SELECT ? std::string("globe")
                                                     : std::string("region"));
   o.set("error", g_regionError);
+  o.set("placingStation", g_placingStation);
 
   val l_sel = val::object();
   const bool l_has = g_globeView && g_globeView->hasSelection();
@@ -1101,6 +1289,13 @@ EMSCRIPTEN_BINDINGS(tsunami_web) {
   function("setMw", &setMw);
   function("commitMw", &commitMw);
   function("clearQuake", &clearQuake);
+  function("setPlacingStation", &setPlacingStation);
+  function("addStation", &addStation);
+  function("renameStation", &renameStation);
+  function("removeStation", &removeStation);
+  function("clearStations", &clearStations);
+  function("getStations", &getStations);
+  function("setStationMarkers", &setStationMarkers);
   function("setField", &setField);
   function("setVertExaggeration", &setVertExaggeration);
   function("setWaveExaggeration", &setWaveExaggeration);

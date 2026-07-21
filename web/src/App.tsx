@@ -20,12 +20,21 @@ export default function App() {
     loadScenario,
     selectionLoading,
     loadSelection,
+    stations,
+    togglePlacingStation,
+    removeStation,
+    renameStation,
+    clearStations,
   } = useTsunami(viewRef);
 
   return (
     <div ref={viewRef} className="relative h-full w-full">
       {/* The wasm renderer binds "#canvas" at boot — must exist up front. */}
-      <canvas id="canvas" tabIndex={0} />
+      <canvas
+        id="canvas"
+        tabIndex={0}
+        className={snapshot?.placingStation ? "cursor-crosshair" : undefined}
+      />
 
       <LoadingScreen boot={boot} />
 
@@ -44,7 +53,15 @@ export default function App() {
               loadSelection={loadSelection}
             />
           ) : (
-            <RegionPanel mod={mod} snapshot={snapshot} />
+            <RegionPanel
+              mod={mod}
+              snapshot={snapshot}
+              stations={stations}
+              togglePlacingStation={togglePlacingStation}
+              removeStation={removeStation}
+              renameStation={renameStation}
+              clearStations={clearStations}
+            />
           )}
           <Legends snapshot={snapshot} />
           <HoverTooltip mod={mod} snapshot={snapshot} viewRef={viewRef} />
