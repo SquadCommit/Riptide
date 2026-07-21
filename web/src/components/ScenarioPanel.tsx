@@ -3,6 +3,7 @@ import { Loader2, MapPinned, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { SwitchRow } from "@/components/panelControls";
 import type { AppSnapshot, Scenario, TsunamiModule } from "@/lib/tsunami";
 
 const SCENARIO_META: { year: string; place: string }[] = [
@@ -119,6 +120,22 @@ export function ScenarioPanel({
             </div>
           )}
         </div>
+
+        {snapshot.slab.available && (
+          <>
+            <Separator />
+            <div className="space-y-3">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                Darstellung
+              </h2>
+              <SwitchRow
+                label="Subduktionszonen zeigen"
+                checked={snapshot.slab.showOverlay}
+                onChange={(v) => mod.current?.setShowSlabOverlay(v)}
+              />
+            </div>
+          </>
+        )}
 
         <div className="text-[10px] leading-relaxed text-muted-foreground/70">
           Bathymetrie: GEBCO 2026 · Subduktionsgeometrie: USGS Slab2 ·

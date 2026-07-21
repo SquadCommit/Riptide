@@ -79,7 +79,8 @@ static bool g_restrictToSlab2 = true;
 static tsunami_lab::io::Slab2Point g_slabPt = {0.0, 0.0, 0.0, false, nullptr};
 
 // Earthquake source: click location + moment magnitude.
-static float g_mw = 8.0f;
+static constexpr float k_defaultMw = 8.0f;
+static float g_mw = k_defaultMw;
 static double g_epiLon = 0, g_epiLat = 0;
 static float g_epiWorldX = 0.0f;
 static float g_epiWorldZ = 0.0f;
@@ -961,6 +962,20 @@ static bool loadSelectionTiles(emscripten::val i_tiles) {
   return loadSelection();
 }
 
+// Discards the current earthquake source (click, magnitude, computed Okada
+// field) so a freshly entered region always starts blank rather than
+// inheriting the previous region's displacement.
+static void resetQuake() {
+  g_hasClick = false;
+  g_mw = k_defaultMw;
+  g_epiLon = g_epiLat = 0.0;
+  g_epiWorldX = g_epiWorldZ = 0.0f;
+  g_slabPt = {0.0, 0.0, 0.0, false, nullptr};
+  g_displModel.reset();
+  if (g_regionView)
+    g_regionView->clearDisplacement();
+}
+
 static void backToGlobe() {
   if (g_dispComputing)
     return; // displacement worker still reads the current grid
@@ -970,6 +985,9 @@ static void backToGlobe() {
   // sim state rather than carrying stale gauges into an unrelated region.
   g_stations.clear();
   g_placingStation = false;
+  // Forget the earthquake source too — re-entering a region must not show
+  // the previous region's epicentre/magnitude/displacement.
+  resetQuake();
   g_state = AppState::REGION_SELECT;
   setCameraGlobeView(g_camera);
 }

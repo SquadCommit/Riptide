@@ -5,6 +5,7 @@ import { Legends } from "@/components/Legends";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { RegionPanel } from "@/components/RegionPanel";
 import { ScenarioPanel } from "@/components/ScenarioPanel";
+import { SourcePanel } from "@/components/SourcePanel";
 import { SimHud } from "@/components/SimHud";
 import { TopBar } from "@/components/TopBar";
 import { useTsunami } from "@/hooks/useTsunami";
@@ -53,15 +54,18 @@ export default function App() {
               loadSelection={loadSelection}
             />
           ) : (
-            <RegionPanel
-              mod={mod}
-              snapshot={snapshot}
-              stations={stations}
-              togglePlacingStation={togglePlacingStation}
-              removeStation={removeStation}
-              renameStation={renameStation}
-              clearStations={clearStations}
-            />
+            <>
+              <RegionPanel
+                mod={mod}
+                snapshot={snapshot}
+                stations={stations}
+                togglePlacingStation={togglePlacingStation}
+                removeStation={removeStation}
+                renameStation={renameStation}
+                clearStations={clearStations}
+              />
+              <SourcePanel mod={mod} snapshot={snapshot} />
+            </>
           )}
           <Legends snapshot={snapshot} />
           <HoverTooltip mod={mod} snapshot={snapshot} viewRef={viewRef} />
