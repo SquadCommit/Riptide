@@ -1,4 +1,5 @@
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 // Slider values that span orders of magnitude (cell size, speed, wave exag.)
 // are edited in log10 space; guard against log(0).
@@ -43,9 +44,35 @@ export function SwitchRow({
   );
 }
 
-/** Shared shell for the floating side panels (left = data/sim, right =
- * source). `side` picks the screen edge; content scrolls only as a fallback
- * on very short viewports. */
+/** A floating glass card with a scrollable body and an optional pinned
+ * footer. Positioning is left to the caller via `className` (either a
+ * SidePanel wrapper or a flex container). */
+export function Panel({
+  children,
+  footer,
+  className,
+}: {
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "pointer-events-auto flex min-h-0 flex-col rounded-2xl border border-border bg-card/70 shadow-2xl backdrop-blur-xl",
+        className,
+      )}
+    >
+      <div className="panel-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+        {children}
+      </div>
+      {footer && <div className="border-t border-border p-3">{footer}</div>}
+    </div>
+  );
+}
+
+/** Panel anchored to a screen edge (top-aligned). Content scrolls only as a
+ * fallback on very short viewports. */
 export function SidePanel({
   side,
   children,
@@ -56,15 +83,14 @@ export function SidePanel({
   footer?: React.ReactNode;
 }) {
   return (
-    <div
-      className={`pointer-events-auto absolute top-20 z-20 flex max-h-[calc(100%-7rem)] w-80 flex-col rounded-2xl border border-border bg-card/70 shadow-2xl backdrop-blur-xl ${
-        side === "left" ? "left-5" : "right-5"
-      }`}
+    <Panel
+      footer={footer}
+      className={cn(
+        "absolute top-20 z-20 max-h-[calc(100%-7rem)] w-80",
+        side === "left" ? "left-5" : "right-5",
+      )}
     >
-      <div className="panel-scroll flex-1 space-y-5 overflow-y-auto p-5">
-        {children}
-      </div>
-      {footer && <div className="border-t border-border p-3">{footer}</div>}
-    </div>
+      {children}
+    </Panel>
   );
 }

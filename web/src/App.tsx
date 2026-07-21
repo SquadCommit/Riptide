@@ -1,12 +1,14 @@
 import { useRef } from "react";
 
+import { HistoryPanel } from "@/components/HistoryPanel";
 import { HoverTooltip } from "@/components/HoverTooltip";
 import { Legends } from "@/components/Legends";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { RegionPanel } from "@/components/RegionPanel";
 import { ScenarioPanel } from "@/components/ScenarioPanel";
-import { SourcePanel } from "@/components/SourcePanel";
 import { SimHud } from "@/components/SimHud";
+import { SourcePanel } from "@/components/SourcePanel";
+import { StationsCard } from "@/components/StationsCard";
 import { TopBar } from "@/components/TopBar";
 import { useTsunami } from "@/hooks/useTsunami";
 
@@ -44,26 +46,33 @@ export default function App() {
           <TopBar snapshot={snapshot} />
           <SimHud snapshot={snapshot} />
           {snapshot.state === "globe" ? (
-            <ScenarioPanel
-              mod={mod}
-              snapshot={snapshot}
-              scenarios={scenarios}
-              scenarioLoading={scenarioLoading}
-              loadScenario={loadScenario}
-              selectionLoading={selectionLoading}
-              loadSelection={loadSelection}
-            />
-          ) : (
             <>
-              <RegionPanel
+              <ScenarioPanel
                 mod={mod}
                 snapshot={snapshot}
-                stations={stations}
-                togglePlacingStation={togglePlacingStation}
-                removeStation={removeStation}
-                renameStation={renameStation}
-                clearStations={clearStations}
+                selectionLoading={selectionLoading}
+                loadSelection={loadSelection}
               />
+              <HistoryPanel
+                scenarios={scenarios}
+                scenarioLoading={scenarioLoading}
+                loadScenario={loadScenario}
+              />
+            </>
+          ) : (
+            <>
+              {/* Left column: region controls on top, gauges filling below. */}
+              <div className="pointer-events-none absolute bottom-5 left-5 top-20 z-20 flex w-80 flex-col gap-3">
+                <RegionPanel mod={mod} snapshot={snapshot} />
+                <StationsCard
+                  snapshot={snapshot}
+                  stations={stations}
+                  togglePlacingStation={togglePlacingStation}
+                  removeStation={removeStation}
+                  renameStation={renameStation}
+                  clearStations={clearStations}
+                />
+              </div>
               <SourcePanel mod={mod} snapshot={snapshot} />
             </>
           )}

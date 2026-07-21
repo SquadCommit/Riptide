@@ -3,31 +3,20 @@ import { ArrowLeft, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Row, SidePanel, SwitchRow, log10 } from "@/components/panelControls";
-import { StationsPanel } from "@/components/StationsPanel";
-import type { AppSnapshot, Station, TsunamiModule } from "@/lib/tsunami";
+import { Panel, Row, SwitchRow, log10 } from "@/components/panelControls";
+import type { AppSnapshot, TsunamiModule } from "@/lib/tsunami";
 
 /**
- * Left panel in the region state: the loaded region's data, the live
- * simulation controls and the virtual gauges. The earthquake source and
- * rendering options live in the right-hand SourcePanel.
+ * Top-left card in the region state: the loaded region's data and the live
+ * simulation controls. The gauges live in the StationsCard below it, the
+ * earthquake source and rendering options in the right-hand SourcePanel.
  */
 export function RegionPanel({
   mod,
   snapshot,
-  stations,
-  togglePlacingStation,
-  removeStation,
-  renameStation,
-  clearStations,
 }: {
   mod: React.RefObject<TsunamiModule | null>;
   snapshot: AppSnapshot;
-  stations: Station[];
-  togglePlacingStation: (v: boolean) => void;
-  removeStation: (idx: number) => void;
-  renameStation: (idx: number, name: string) => void;
-  clearStations: () => void;
 }) {
   const m = mod.current;
   const r = snapshot.region!;
@@ -36,8 +25,8 @@ export function RegionPanel({
   const running = sim.running;
 
   return (
-    <SidePanel
-      side="left"
+    <Panel
+      className="w-80"
       footer={
         <Button
           variant="ghost"
@@ -128,22 +117,11 @@ export function RegionPanel({
         )}
       </div>
 
-      <Separator />
-
-      <StationsPanel
-        snapshot={snapshot}
-        stations={stations}
-        togglePlacingStation={togglePlacingStation}
-        removeStation={removeStation}
-        renameStation={renameStation}
-        clearStations={clearStations}
-      />
-
       {snapshot.error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           {snapshot.error}
         </div>
       )}
-    </SidePanel>
+    </Panel>
   );
 }
