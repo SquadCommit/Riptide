@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchBytes,
+  tileUrlsForBbox,
   withHeapBytes,
+  withHeapBytesMulti,
   type AppSnapshot,
   type Scenario,
   type TsunamiModule,
@@ -39,6 +41,7 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [scenarioLoading, setScenarioLoading] = useState<number | null>(null);
+  const [selectionLoading, setSelectionLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +152,36 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
     }
   }, []);
 
+  // Fetches the tiles overlapping the current selection and loads them at
+  // tile resolution (see tools/make_web_data.py's TILE_DEG), instead of the
+  // coarse whole-world fallback grid loadSelection() alone would use.
+  const loadSelection = useCallback(async () => {
+    const mod = modRef.current;
+    const sel = modRef.current?.getState().selection;
+    if (!mod || !sel?.has) return false;
+    setSelectionLoading(true);
+    try {
+      const urls = tileUrlsForBbox(
+        DATA_BASE,
+        sel.lonMin!,
+        sel.lonMax!,
+        sel.latMin!,
+        sel.latMax!,
+      );
+      const tiles = await Promise.all(urls.map(fetchBytes));
+      return withHeapBytesMulti(mod, tiles, (ptrs, sizes) =>
+        mod.loadSelectionTiles(
+          ptrs.map((ptr, i) => ({ ptr, size: sizes[i] })),
+        ),
+      );
+    } catch (e) {
+      console.error(e);
+      return false;
+    } finally {
+      setSelectionLoading(false);
+    }
+  }, []);
+
   return {
     mod: modRef,
     boot,
@@ -156,5 +189,7 @@ export function useTsunami(viewRef: React.RefObject<HTMLDivElement | null>) {
     scenarios,
     scenarioLoading,
     loadScenario,
+    selectionLoading,
+    loadSelection,
   };
 }

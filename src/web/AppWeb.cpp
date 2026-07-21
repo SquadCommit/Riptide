@@ -439,8 +439,11 @@ static void startSimulation() {
 static void setCameraGlobeView(gv::Camera& cam) {
   cam.setTarget(glm::vec3(0.0f, 0.0f, 0.0f));
   cam.setAzimuth(0.0f);
-  cam.setElevation(1.5f); // nearly top-down (avoids lookAt singularity)
-  cam.setDistance(300.0f);
+  // A 3/4 oblique angle so the sphere reads as a globe (curved limb, shaded
+  // terminator) rather than a top-down disc.
+  cam.setElevation(0.4f);
+  // ~2.6x the globe radius keeps it filling most of the 45 deg-FOV frame.
+  cam.setDistance(150.0f);
 }
 
 static void setCameraRegionView(gv::Camera& cam) {
@@ -532,12 +535,13 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent* i_e, void*) {
       const bool l_isClick =
           std::abs(g_lastX - g_pressX) + std::abs(g_lastY - g_pressY) < 5.0;
       if (l_isClick && g_slab2 && g_globeView->showSlab2Overlay) {
-        const glm::vec2 l_w = regionUnproject((float)g_lastX, (float)g_lastY,
-                                              g_screenW, g_screenH, g_camera);
-        // World X = lon, Z = -lat on the flat map.
-        if (g_slab2->query(l_w.x, -l_w.y).valid)
+        float l_lon, l_lat;
+        if (g_globeView->screenToLonLat((float)g_lastX, (float)g_lastY,
+                                        g_screenW, g_screenH, g_camera, l_lon,
+                                        l_lat) &&
+            g_slab2->query(l_lon, l_lat).valid)
           g_globeView->setSelection(
-              suggestSlabSelection(l_w.x, -l_w.y, g_globeView->maxSelDeg));
+              suggestSlabSelection(l_lon, l_lat, g_globeView->maxSelDeg));
       }
     } else if (g_state == AppState::REGION_PREVIEW && g_dragDist < 5.0f &&
                !simRunning()) {
@@ -560,8 +564,9 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent* i_e, void*) {
     if (g_mouseLeft && g_globeView)
       g_globeView->onMouseMove((float)g_lastX, (float)g_lastY, g_screenW,
                                g_screenH, g_camera);
+    // Rotate the globe instead of panning an (now nonexistent) flat map.
     if (g_mouseMiddle)
-      g_camera.onMapPan(dx, dy);
+      g_camera.onMouseDrag(dx, dy);
   } else {
     if (g_mouseLeft) {
       g_dragDist += std::abs(dx) + std::abs(dy);
@@ -613,13 +618,19 @@ static void frame() {
   g_lastFrameTime = l_now;
   l_dt = std::min(l_dt, 0.1f); // background tabs: avoid huge catch-up pans
 
-  // Keyboard pan
+  // Keyboard pan/rotate
   {
     float l_speed = 200.0f * l_dt;
     float l_kx = (g_keyR ? l_speed : 0.0f) - (g_keyL ? l_speed : 0.0f);
     float l_ky = (g_keyD ? l_speed : 0.0f) - (g_keyU ? l_speed : 0.0f);
-    if (l_kx != 0.0f || l_ky != 0.0f)
-      g_camera.onMapPan(-l_kx, -l_ky);
+    if (l_kx != 0.0f || l_ky != 0.0f) {
+      // REGION_SELECT shows the globe: rotate it instead of panning a
+      // (now nonexistent) flat map.
+      if (g_state == AppState::REGION_SELECT)
+        g_camera.onMouseDrag(-l_kx, -l_ky);
+      else
+        g_camera.onMapPan(-l_kx, -l_ky);
+    }
   }
 
   const int l_fbW = (int)(g_screenW * g_dpr);
@@ -760,17 +771,20 @@ static emscripten::val getHoverInfo(double i_x, double i_y) {
   using emscripten::val;
   val o = val::object();
   o.set("valid", false);
-  const glm::vec2 l_w =
-      regionUnproject((float)i_x, (float)i_y, g_screenW, g_screenH, g_camera);
   double l_lon = 0.0, l_lat = 0.0;
   if (g_state == AppState::REGION_SELECT) {
-    l_lon = l_w.x;
-    l_lat = -l_w.y; // world X = lon, Z = -lat
-    if (l_lon < -180.0 || l_lon > 180.0 || l_lat < -90.0 || l_lat > 90.0)
-      return o;
+    float l_flon, l_flat;
+    if (!g_globeView ||
+        !g_globeView->screenToLonLat((float)i_x, (float)i_y, g_screenW,
+                                     g_screenH, g_camera, l_flon, l_flat))
+      return o; // cursor is off the visible limb of the globe
+    l_lon = l_flon;
+    l_lat = l_flat;
   } else {
     if (!g_regionView || !g_regionView->loaded())
       return o;
+    const glm::vec2 l_w = regionUnproject((float)i_x, (float)i_y, g_screenW,
+                                          g_screenH, g_camera);
     g_regionView->worldToLonLat(l_w.x, l_w.y, l_lon, l_lat);
     if (l_lon < g_regionView->lonMin || l_lon > g_regionView->lonMax ||
         l_lat < g_regionView->latMin || l_lat > g_regionView->latMax)
@@ -807,12 +821,40 @@ static bool loadScenarioBytes(int i_idx, uintptr_t i_ptr, int i_size) {
   return g_state == AppState::REGION_PREVIEW;
 }
 
-// Manual selection: crops from whatever grid covers it (the coarse globe
-// grid until a tile pipeline provides high-res data for arbitrary boxes).
+// Manual selection: crops from whatever grid covers it — the stitched tile
+// grid set up by loadSelectionTiles() below when available, else the coarse
+// globe grid as a fallback (see web::pickSource in WebData.cpp).
 static bool loadSelection() {
   if (!g_globeView || !g_globeView->hasSelection())
     return false;
   return loadRegionAndEnterPreview(g_globeView->getSelection());
+}
+
+// Tile bytes fetched by JS for the current free-hand selection (one tile per
+// world cell overlapping the bbox — see tools/make_web_data.py's TILE_DEG
+// and tileUrlsForBbox() in web/src/lib/tsunami.ts). i_tiles is a JS array of
+// {ptr, size} pairs already copied into the wasm heap; stitches them into
+// one region grid and loads it exactly like loadSelection() above, just at
+// tile resolution instead of the coarse whole-world fallback.
+static bool loadSelectionTiles(emscripten::val i_tiles) {
+  const int l_n = i_tiles["length"].as<int>();
+  std::vector<web::Grid> l_grids;
+  l_grids.reserve((size_t)l_n);
+  for (int l_i = 0; l_i < l_n; l_i++) {
+    const emscripten::val l_t = i_tiles[l_i];
+    const auto l_ptr = (const uint8_t*)l_t["ptr"].as<uintptr_t>();
+    const int l_size = l_t["size"].as<int>();
+    web::Grid l_g;
+    if (web::parseGrid(l_ptr, (size_t)l_size, l_g))
+      l_grids.push_back(std::move(l_g));
+  }
+  web::Grid l_combined;
+  if (!web::stitchGrids(l_grids, l_combined)) {
+    g_regionError = "Kachel-Daten unlesbar.";
+    return false;
+  }
+  web::setRegionGrid(std::move(l_combined));
+  return loadSelection();
 }
 
 static void backToGlobe() {
@@ -1050,6 +1092,7 @@ EMSCRIPTEN_BINDINGS(tsunami_web) {
   function("setShowSlabOverlay", &setShowSlabOverlay);
   function("getHoverInfo", &getHoverInfo);
   function("loadSelection", &loadSelection);
+  function("loadSelectionTiles", &loadSelectionTiles);
   function("backToGlobe", &backToGlobe);
   function("reloadRegion", &reloadRegion);
   function("setSelection", &setSelection);

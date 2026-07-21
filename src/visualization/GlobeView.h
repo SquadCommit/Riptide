@@ -25,6 +25,12 @@ public:
   static constexpr int MIN_LON_SAMPLES = 360;      // 1.0°
   static constexpr int MAX_LON_SAMPLES = 17280;    // ~0.021° (1.25 arc-min)
 
+  // Sphere radius, in the same "world units" the flat map used to give one
+  // degree of longitude: 180/pi makes one degree of arc length on the
+  // sphere's surface equal to one world unit, so the existing LOD math
+  // (tuned against a 1-world-unit-per-degree flat map) still applies unchanged.
+  static constexpr float RADIUS = 57.29577951308232f;
+
   void init(const char* i_gebcoPath);
   void setResolution(int i_lonSamples);
   int resolution() const { return m_lonSamples; }
@@ -44,6 +50,22 @@ public:
   void onMouseRelease();
   void
   onMouseMove(float i_mx, float i_my, int i_w, int i_h, const Camera& i_cam);
+
+  /**
+   * Casts a screen-space ray against the globe sphere and returns the
+   * (lon, lat) in degrees where it hits. Used for both selection dragging and
+   * UI hover/click queries (subduction-zone tooltip, click-to-suggest), so
+   * both agree on exactly the same sphere the terrain is rendered on.
+   *
+   * @return false if the ray misses the sphere (cursor off the visible limb).
+   **/
+  bool screenToLonLat(float i_mx,
+                      float i_my,
+                      int i_w,
+                      int i_h,
+                      const Camera& i_cam,
+                      float& o_lon,
+                      float& o_lat) const;
 
   bool hasSelection() const { return m_hasSelection; }
   BBox getSelection() const;
@@ -68,8 +90,6 @@ public:
   ~GlobeView();
 
 private:
-  glm::vec2 unproject(
-      float i_mx, float i_my, int i_w, int i_h, const Camera& i_cam) const;
   glm::vec2 clampSelEnd(glm::vec2 i_end) const;
   void uploadSelectionRect() const;
   void loadGebco(const char* i_path, int i_lonSamples);
@@ -90,15 +110,26 @@ private:
   float m_cellWorld = 0.0f; // world-unit (degree) size of one grid cell
   int m_gridW = 0, m_gridH = 0;
 
+  // Selection rectangle is tessellated into a (kSelGridN)^2 grid of (lon,lat)
+  // vertices so its edges follow the sphere's curvature instead of cutting
+  // straight chords through it. Grid topology (fill/outline indices) is
+  // fixed and built once; only vertex positions change per selection.
+  static constexpr int kSelSubdiv = 24;
+  static constexpr int kSelGridN = kSelSubdiv + 1;
   GLuint m_selVao = 0;
   GLuint m_selVbo = 0;
-  GLuint m_selEbo = 0; // outline indices (WebGL2 has no client-side arrays)
+  GLuint m_selFillEbo = 0;
+  GLuint m_selOutlineEbo = 0;
+  GLsizei m_selOutlineCnt = 0;
 
-  // Subduction-zone overlay: a depth-graded RGBA texture on a world-spanning
-  // quad (see buildSlab2Overlay).
+  // Subduction-zone overlay: a depth-graded RGBA texture on a tessellated
+  // sphere mesh (see buildSlab2Overlay) — a single flat quad's 4 corners
+  // would degenerate at the poles once mapped onto a sphere.
   Shader m_slabShader;
   GLuint m_slabVao = 0;
   GLuint m_slabVbo = 0;
+  GLuint m_slabEbo = 0;
+  GLsizei m_slabIdxCnt = 0;
   GLuint m_slabTex = 0;
   bool m_hasSlabOverlay = false;
 

@@ -11,8 +11,16 @@ import { useTsunami } from "@/hooks/useTsunami";
 
 export default function App() {
   const viewRef = useRef<HTMLDivElement>(null);
-  const { mod, boot, snapshot, scenarios, scenarioLoading, loadScenario } =
-    useTsunami(viewRef);
+  const {
+    mod,
+    boot,
+    snapshot,
+    scenarios,
+    scenarioLoading,
+    loadScenario,
+    selectionLoading,
+    loadSelection,
+  } = useTsunami(viewRef);
 
   return (
     <div ref={viewRef} className="relative h-full w-full">
@@ -32,6 +40,8 @@ export default function App() {
               scenarios={scenarios}
               scenarioLoading={scenarioLoading}
               loadScenario={loadScenario}
+              selectionLoading={selectionLoading}
+              loadSelection={loadSelection}
             />
           ) : (
             <RegionPanel mod={mod} snapshot={snapshot} />

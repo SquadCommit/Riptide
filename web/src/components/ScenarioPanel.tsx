@@ -20,12 +20,16 @@ export function ScenarioPanel({
   scenarios,
   scenarioLoading,
   loadScenario,
+  selectionLoading,
+  loadSelection,
 }: {
   mod: React.RefObject<TsunamiModule | null>;
   snapshot: AppSnapshot;
   scenarios: Scenario[];
   scenarioLoading: number | null;
   loadScenario: (idx: number) => void;
+  selectionLoading: boolean;
+  loadSelection: () => void;
 }) {
   const sel = snapshot.selection;
   return (
@@ -84,21 +88,29 @@ export function ScenarioPanel({
               <div className="flex gap-2">
                 <Button
                   className="flex-1"
-                  onClick={() => mod.current?.loadSelection()}
+                  onClick={loadSelection}
+                  disabled={selectionLoading}
                 >
-                  <MapPinned /> Region laden
+                  {selectionLoading ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <MapPinned />
+                  )}
+                  Region laden
                 </Button>
                 <Button
                   variant="outline"
                   size="icon"
+                  disabled={selectionLoading}
                   onClick={() => mod.current?.clearSelection()}
                 >
                   <X />
                 </Button>
               </div>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Freie Auswahl nutzt vorerst das Welt-Gitter (~5,6 km) — volle
-                Auflösung bieten die historischen Ereignisse.
+                Lädt automatisch die passenden Gelände-Kacheln nach (~1,4 km
+                Auflösung — historische Ereignisse nutzen noch feinere,
+                fest hinterlegte Daten).
               </p>
             </div>
           ) : (

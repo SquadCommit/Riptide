@@ -97,6 +97,7 @@ export interface TsunamiModule {
   loadScenarioBytes(idx: number, ptr: number, size: number): boolean;
   loadSlab2Bytes(ptr: number, size: number): boolean;
   loadSelection(): boolean;
+  loadSelectionTiles(tiles: { ptr: number; size: number }[]): boolean;
   backToGlobe(): void;
   reloadRegion(maxDim: number): void;
   setSelection(
@@ -142,6 +143,54 @@ export function withHeapBytes<T>(
   } finally {
     mod._free(ptr);
   }
+}
+
+/** Copies several buffers into the wasm heap at once, runs fn, frees all. */
+export function withHeapBytesMulti<T>(
+  mod: TsunamiModule,
+  buffers: Uint8Array[],
+  fn: (ptrs: number[], sizes: number[]) => T,
+): T {
+  const ptrs = buffers.map((b) => {
+    const p = mod._malloc(b.length);
+    mod.HEAPU8.set(b, p);
+    return p;
+  });
+  try {
+    return fn(
+      ptrs,
+      buffers.map((b) => b.length),
+    );
+  } finally {
+    ptrs.forEach((p) => mod._free(p));
+  }
+}
+
+// World tiling for on-demand free-hand selections — must match TILE_DEG in
+// tools/make_web_data.py.
+const TILE_DEG = 6;
+const TILE_TILES_X = 60; // 360 / TILE_DEG
+const TILE_TILES_Y = 30; // 180 / TILE_DEG
+
+/** URLs of the tiles (tools/make_web_data.py) covering a lon/lat bbox. */
+export function tileUrlsForBbox(
+  dataBase: string,
+  lonMin: number,
+  lonMax: number,
+  latMin: number,
+  latMax: number,
+): string[] {
+  const clamp = (v: number, lo: number, hi: number) =>
+    Math.min(Math.max(v, lo), hi);
+  const tx0 = clamp(Math.floor((lonMin + 180) / TILE_DEG), 0, TILE_TILES_X - 1);
+  const tx1 = clamp(Math.floor((lonMax + 180) / TILE_DEG), 0, TILE_TILES_X - 1);
+  const ty0 = clamp(Math.floor((latMin + 90) / TILE_DEG), 0, TILE_TILES_Y - 1);
+  const ty1 = clamp(Math.floor((latMax + 90) / TILE_DEG), 0, TILE_TILES_Y - 1);
+  const urls: string[] = [];
+  for (let ty = ty0; ty <= ty1; ty++)
+    for (let tx = tx0; tx <= tx1; tx++)
+      urls.push(`${dataBase}tiles/tile_${tx}_${ty}.bin.gz`);
+  return urls;
 }
 
 /**

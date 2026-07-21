@@ -46,6 +46,53 @@ bool hasGlobeGrid() { return s_globe.valid(); }
 void setRegionGrid(Grid&& i_grid) { s_region = std::move(i_grid); }
 void clearRegionGrid() { s_region = Grid(); }
 
+bool stitchGrids(const std::vector<Grid>& i_tiles, Grid& o_combined) {
+  if (i_tiles.empty())
+    return false;
+
+  // All tiles are cut from the same source grid at the same TILE_DEG stride
+  // (tools/make_web_data.py), so they share one lon/lat step; the union
+  // bounds come from the tiles' own headers, snapping any float drift onto
+  // that shared step below.
+  const double l_lonStep = i_tiles[0].lonStep();
+  const double l_latStep = i_tiles[0].latStep();
+  double l_lonMin = i_tiles[0].lonMin, l_lonMax = i_tiles[0].lonMax;
+  double l_latMin = i_tiles[0].latMin, l_latMax = i_tiles[0].latMax;
+  for (const Grid& l_t : i_tiles) {
+    l_lonMin = std::min(l_lonMin, l_t.lonMin);
+    l_lonMax = std::max(l_lonMax, l_t.lonMax);
+    l_latMin = std::min(l_latMin, l_t.latMin);
+    l_latMax = std::max(l_latMax, l_t.latMax);
+  }
+
+  const int l_w = (int)std::lround((l_lonMax - l_lonMin) / l_lonStep) + 1;
+  const int l_h = (int)std::lround((l_latMax - l_latMin) / l_latStep) + 1;
+  if (l_w < 2 || l_h < 2)
+    return false;
+
+  o_combined.w = l_w;
+  o_combined.h = l_h;
+  o_combined.lonMin = l_lonMin;
+  o_combined.lonMax = l_lonMax;
+  o_combined.latMin = l_latMin;
+  o_combined.latMax = l_latMax;
+  o_combined.elev.assign((size_t)l_w * l_h, (int16_t)-32768); // nodata
+
+  for (const Grid& l_t : i_tiles) {
+    const int l_ox =
+        (int)std::lround((l_t.lonMin - l_lonMin) / l_lonStep);
+    const int l_oy =
+        (int)std::lround((l_t.latMin - l_latMin) / l_latStep);
+    for (int l_j = 0; l_j < l_t.h; l_j++) {
+      const int16_t* l_src = &l_t.elev[(size_t)l_j * l_t.w];
+      int16_t* l_dst =
+          &o_combined.elev[(size_t)(l_oy + l_j) * l_w + l_ox];
+      std::memcpy(l_dst, l_src, (size_t)l_t.w * sizeof(int16_t));
+    }
+  }
+  return true;
+}
+
 // True if i_grid covers i_bbox (with half-a-cell slack at the edges).
 static bool covers(const Grid& i_grid, const visualization::BBox& i_bbox) {
   const double l_eLon = 0.5 * i_grid.lonStep();

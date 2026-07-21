@@ -6,6 +6,9 @@ Writes web/public/data/ (gitignored):
   globe.bin        whole world, ~4320 samples wide  (globe view + coarse
                    fallback for free selections)
   scenario_<i>.bin one high-res grid per historical scenario (<=1200/axis)
+  tiles/tile_<tx>_<ty>.bin  world tiled at TILE_DEG°, fetched on demand for
+                   free-hand region selections (see tileUrlsForBbox in
+                   web/src/lib/tsunami.ts — keep TILE_DEG in sync there)
 
 Binary format "TLB1" (little endian), see src/web/WebData.h:
   char[4] magic | int32 w, h | float64 lonMin, lonMax, latMin, latMax
@@ -32,6 +35,17 @@ OUT = os.path.join(ROOT, "web", "public", "data")
 GLOBE_LON_SAMPLES = 4320  # ~0.083 deg; ~18 MB raw, fine as a one-time fetch
 REGION_MAX_DIM = 2500     # native 15-arcsec for 10-deg scenarios; sim crops to <=2048
 
+# World tiling for on-demand free-hand selections (see tileUrlsForBbox in
+# web/src/lib/tsunami.ts — TILE_DEG there must match this value). TILE_DEG
+# must evenly divide both 360 and 180 so tiles cover the world exactly.
+# ~45 arcsec (native 15-arcsec / 3) keeps total tile storage to a few hundred
+# MB instead of the ~5-7 GB a fully-native tiled world would need.
+TILE_DEG = 6.0
+TILE_PX_PER_DEG = 80
+TILE_SAMPLES = round(TILE_DEG * TILE_PX_PER_DEG)  # 480
+TILES_X = round(360 / TILE_DEG)  # 60
+TILES_Y = round(180 / TILE_DEG)  # 30
+
 # Keep in sync with src/visualization/Scenario.h (k_scenarios).
 SCENARIOS = [
     ("Tohoku 2011",          138.0, 148.0, 34.0, 42.0),
@@ -42,7 +56,7 @@ SCENARIOS = [
 ]
 
 
-def write_grid(path, elev, lon, lat):
+def write_grid(path, elev, lon, lat, verbose=True):
     """elev: 2D int16 array (rows = lat), lon/lat: 1D coordinate arrays.
     Written gzip-compressed (.gz suffix); the frontend inflates via
     DecompressionStream."""
@@ -57,8 +71,9 @@ def write_grid(path, elev, lon, lat):
         f.write(struct.pack("<dddd", float(lon[0]), float(lon[-1]),
                             float(lat[0]), float(lat[-1])))
         f.write(np.ascontiguousarray(elev, dtype="<i2").tobytes())
-    print(f"  {os.path.relpath(path, ROOT)}: {w}x{h}, "
-          f"{os.path.getsize(path) / 1e6:.1f} MB gz")
+    if verbose:
+        print(f"  {os.path.relpath(path, ROOT)}: {w}x{h}, "
+              f"{os.path.getsize(path) / 1e6:.1f} MB gz")
 
 
 def extract(nc, lon_min, lon_max, lat_min, lat_max, max_dim):
@@ -150,6 +165,31 @@ def write_slab2():
           f"{os.path.getsize(out) / 1e6:.1f} MB gz")
 
 
+def write_tiles(nc):
+    """Tiles the whole world at TILE_DEG resolution into web/public/data/tiles/
+    (see the module docstring / TILE_DEG comment above). Free-hand region
+    selections fetch only the tiles overlapping their bbox at runtime instead
+    of the coarse whole-world grid."""
+    out_dir = os.path.join(OUT, "tiles")
+    os.makedirs(out_dir, exist_ok=True)
+    total_bytes = 0
+    n = 0
+    for ty in range(TILES_Y):
+        lat0 = -90.0 + ty * TILE_DEG
+        lat1 = lat0 + TILE_DEG
+        for tx in range(TILES_X):
+            lon0 = -180.0 + tx * TILE_DEG
+            lon1 = lon0 + TILE_DEG
+            elev, lon, lat = extract(nc, lon0, lon1, lat0, lat1, TILE_SAMPLES)
+            path = os.path.join(out_dir, f"tile_{tx}_{ty}.bin.gz")
+            write_grid(path, elev, lon, lat, verbose=False)
+            total_bytes += os.path.getsize(path)
+            n += 1
+        print(f"  Zeile {ty + 1}/{TILES_Y} ({n} Kacheln, "
+              f"{total_bytes / 1e6:.0f} MB gz bisher) ...")
+    print(f"  {n} Kacheln, {total_bytes / 1e6:.0f} MB gz gesamt.")
+
+
 def main():
     import fetch_data
     fetch_data.ensure_gebco()
@@ -166,6 +206,9 @@ def main():
         print(f"Szenario {i} ({name}) ...")
         elev, lon, lat = extract(nc, lon0, lon1, lat0, lat1, REGION_MAX_DIM)
         write_grid(os.path.join(OUT, f"scenario_{i}.bin.gz"), elev, lon, lat)
+
+    print(f"Welt-Kacheln ({TILES_X}x{TILES_Y}, {TILE_DEG:g}°/Kachel) ...")
+    write_tiles(nc)
 
     nc.close()
 

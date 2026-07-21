@@ -34,6 +34,15 @@ struct Grid {
 // Parses the TLB1 format; returns false on malformed input.
 bool parseGrid(const uint8_t* i_data, size_t i_size, Grid& o_grid);
 
+/**
+ * Combines several grids sampled at the same lon/lat step (built from
+ * adjoining world tiles — see tools/make_web_data.py's TILE_DEG) into one
+ * grid spanning their union. Gaps (tiles that failed to parse and were
+ * skipped) are filled with -32768 (nodata). False if i_tiles is empty or the
+ * union collapses to under 2 samples on either axis.
+ **/
+bool stitchGrids(const std::vector<Grid>& i_tiles, Grid& o_combined);
+
 // The whole-world grid fetched once at boot (globe view + coarse fallback
 // for selections outside any loaded region grid).
 void setGlobeGrid(Grid&& i_grid);
