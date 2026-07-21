@@ -13,7 +13,7 @@ export function SimHud({ snapshot }: { snapshot: AppSnapshot }) {
   const sim = snapshot.sim;
   if (!sim.running) return null;
   return (
-    <div className="pointer-events-none absolute right-6 top-4 z-20">
+    <div className="pointer-events-none absolute left-1/2 top-20 z-20 -translate-x-1/2">
       <div className="flex items-center gap-4 rounded-2xl border border-border bg-card/70 px-5 py-3 shadow-lg backdrop-blur-xl">
         <span className="relative flex h-2.5 w-2.5">
           <span className="animate-pulse-dot absolute inline-flex h-full w-full rounded-full bg-red-500" />

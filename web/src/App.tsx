@@ -62,7 +62,7 @@ export default function App() {
           ) : (
             <>
               {/* Left column: region controls on top, gauges filling below. */}
-              <div className="pointer-events-none absolute bottom-5 left-5 top-20 z-20 flex w-80 flex-col gap-3">
+              <div className="pointer-events-none absolute bottom-5 left-5 top-5 z-20 flex w-80 flex-col gap-3">
                 <RegionPanel mod={mod} snapshot={snapshot} />
                 <StationsCard
                   snapshot={snapshot}

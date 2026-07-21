@@ -86,7 +86,7 @@ export function SidePanel({
     <Panel
       footer={footer}
       className={cn(
-        "absolute top-20 z-20 max-h-[calc(100%-7rem)] w-80",
+        "absolute top-5 z-20 max-h-[calc(100%-2.5rem)] w-80",
         side === "left" ? "left-5" : "right-5",
       )}
     >
