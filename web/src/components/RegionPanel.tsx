@@ -24,6 +24,24 @@ export function RegionPanel({
   const sim = snapshot.sim;
   const running = sim.running;
 
+  // Zeitraffer readout. maxSpeed is the live rate the hardware can sustain
+  // (only known while running, and it drifts a little each poll):
+  //  - auto mode  -> track maxSpeed on the slider + value, since the solver
+  //    is being driven at exactly that rate.
+  //  - manual mode -> if the setpoint is above maxSpeed the run is capped, so
+  //    surface the effective rate like the cell-size "eff." hint does.
+  const maxSpeed = sim.maxSpeed ?? 0;
+  const shownSpeed = sim.autoSpeed && maxSpeed > 0 ? maxSpeed : sim.speed;
+  const speedCapped =
+    running && !sim.autoSpeed && maxSpeed > 0 && sim.speed > maxSpeed * 1.05;
+  const speedValue = sim.autoSpeed
+    ? maxSpeed > 0
+      ? `auto · ~${Math.round(maxSpeed)}×`
+      : "auto"
+    : speedCapped
+      ? `${Math.round(sim.speed)}× → eff. ~${Math.round(maxSpeed)}×`
+      : `${Math.round(sim.speed)}×`;
+
   return (
     <Panel
       className="w-80"
@@ -83,13 +101,13 @@ export function RegionPanel({
             Gitter {sim.previewNx} × {sim.previewNy} Zellen
           </div>
         )}
-        <Row label="Zeitraffer" value={`${Math.round(sim.speed)}×`}>
+        <Row label="Zeitraffer" value={speedValue}>
           <Slider
             min={0}
             max={3.3}
             step={0.01}
             disabled={sim.autoSpeed}
-            value={[log10.to(sim.speed)]}
+            value={[Math.min(3.3, log10.to(shownSpeed))]}
             onValueChange={([v]) => m?.setSimSpeed(Math.pow(10, v))}
           />
         </Row>
