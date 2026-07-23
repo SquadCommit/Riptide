@@ -74,6 +74,9 @@ body,
   height: 100%;
   display: block;
   outline: none;
+  /* Own all touch gestures (rotate/pinch/pan) instead of letting the browser
+     scroll or page-zoom over the 3d view. */
+  touch-action: none;
 }
 
 @keyframes pulse-dot {

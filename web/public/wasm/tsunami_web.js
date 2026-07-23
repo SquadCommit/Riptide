@@ -6224,6 +6224,124 @@ ${functionBody}
   
   
   
+  
+  var registerTouchEventCallback = (target, userData, useCapture, callbackfunc, eventTypeId, eventTypeString, targetThread) => {
+      targetThread = JSEvents.getTargetThreadForEventCallback(targetThread);
+      var eventSize = 1552;
+      JSEvents.touchEvent ||= _malloc(eventSize);
+  
+      target = findEventTarget(target);
+  
+      var touchEventHandlerFunc = (e) => {
+        assert(e);
+        var t, touches = {}, et = e.touches;
+        // To ease marshalling different kinds of touches that browser reports (all touches are listed in e.touches,
+        // only changed touches in e.changedTouches, and touches on target at a.targetTouches), mark a boolean in
+        // each Touch object so that we can later loop only once over all touches we see to marshall over to Wasm.
+  
+        for (let t of et) {
+          // Browser might recycle the generated Touch objects between each frame (Firefox on Android), so reset any
+          // changed/target states we may have set from previous frame.
+          t.isChanged = t.onTarget = 0;
+          touches[t.identifier] = t;
+        }
+        // Mark which touches are part of the changedTouches list.
+        for (let t of e.changedTouches) {
+          t.isChanged = 1;
+          touches[t.identifier] = t;
+        }
+        // Mark which touches are part of the targetTouches list.
+        for (let t of e.targetTouches) {
+          touches[t.identifier].onTarget = 1;
+        }
+  
+        var touchEvent = JSEvents.touchEvent;
+        HEAPF64[((touchEvent)>>3)] = e.timeStamp;
+        HEAP8[touchEvent + 12] = e.ctrlKey;
+        HEAP8[touchEvent + 13] = e.shiftKey;
+        HEAP8[touchEvent + 14] = e.altKey;
+        HEAP8[touchEvent + 15] = e.metaKey;
+        var idx = touchEvent + 16;
+        var targetRect = getBoundingClientRect(target);
+        var numTouches = 0;
+        for (let t of Object.values(touches)) {
+          var idx32 = ((idx)>>2); // Pre-shift the ptr to index to HEAP32 to save code size
+          HEAP32[idx32 + 0] = t.identifier;
+          HEAP32[idx32 + 1] = t.screenX;
+          HEAP32[idx32 + 2] = t.screenY;
+          HEAP32[idx32 + 3] = t.clientX;
+          HEAP32[idx32 + 4] = t.clientY;
+          HEAP32[idx32 + 5] = t.pageX;
+          HEAP32[idx32 + 6] = t.pageY;
+          HEAP8[idx + 28] = t.isChanged;
+          HEAP8[idx + 29] = t.onTarget;
+          HEAP32[idx32 + 8] = t.clientX - (targetRect.left | 0);
+          HEAP32[idx32 + 9] = t.clientY - (targetRect.top  | 0);
+  
+          idx += 48;
+  
+          if (++numTouches > 31) {
+            break;
+          }
+        }
+        HEAP32[(((touchEvent)+(8))>>2)] = numTouches;
+  
+        if (targetThread) __emscripten_run_callback_on_thread(targetThread, callbackfunc, eventTypeId, touchEvent, eventSize, userData);
+        else
+        if (getWasmTableEntry(callbackfunc)(eventTypeId, touchEvent, userData)) e.preventDefault();
+      };
+  
+      var eventHandler = {
+        target,
+        allowsDeferredCalls: eventTypeString == 'touchstart' || eventTypeString == 'touchend',
+        eventTypeString,
+        eventTypeId,
+        userData,
+        callbackfunc,
+        handlerFunc: touchEventHandlerFunc,
+        useCapture
+      };
+      return JSEvents.registerOrRemoveHandler(eventHandler);
+    };
+  
+  
+  function _emscripten_set_touchcancel_callback_on_thread(target, userData, useCapture, callbackfunc, targetThread) {
+  if (ENVIRONMENT_IS_PTHREAD)
+    return proxyToMainThread(13, 0, 1, target, userData, useCapture, callbackfunc, targetThread);
+  return registerTouchEventCallback(target, userData, useCapture, callbackfunc, 25, "touchcancel", targetThread)
+  }
+  
+
+  
+  
+  function _emscripten_set_touchend_callback_on_thread(target, userData, useCapture, callbackfunc, targetThread) {
+  if (ENVIRONMENT_IS_PTHREAD)
+    return proxyToMainThread(14, 0, 1, target, userData, useCapture, callbackfunc, targetThread);
+  return registerTouchEventCallback(target, userData, useCapture, callbackfunc, 23, "touchend", targetThread)
+  }
+  
+
+  
+  
+  function _emscripten_set_touchmove_callback_on_thread(target, userData, useCapture, callbackfunc, targetThread) {
+  if (ENVIRONMENT_IS_PTHREAD)
+    return proxyToMainThread(15, 0, 1, target, userData, useCapture, callbackfunc, targetThread);
+  return registerTouchEventCallback(target, userData, useCapture, callbackfunc, 24, "touchmove", targetThread)
+  }
+  
+
+  
+  
+  function _emscripten_set_touchstart_callback_on_thread(target, userData, useCapture, callbackfunc, targetThread) {
+  if (ENVIRONMENT_IS_PTHREAD)
+    return proxyToMainThread(16, 0, 1, target, userData, useCapture, callbackfunc, targetThread);
+  return registerTouchEventCallback(target, userData, useCapture, callbackfunc, 22, "touchstart", targetThread)
+  }
+  
+
+  
+  
+  
   var registerWheelEventCallback = (target, userData, useCapture, callbackfunc, eventTypeId, eventTypeString, targetThread) => {
       targetThread = JSEvents.getTargetThreadForEventCallback(targetThread);
       var eventSize = 96;
@@ -6259,7 +6377,7 @@ ${functionBody}
   
   function _emscripten_set_wheel_callback_on_thread(target, userData, useCapture, callbackfunc, targetThread) {
   if (ENVIRONMENT_IS_PTHREAD)
-    return proxyToMainThread(13, 0, 1, target, userData, useCapture, callbackfunc, targetThread);
+    return proxyToMainThread(17, 0, 1, target, userData, useCapture, callbackfunc, targetThread);
   
       target = findEventTarget(target);
       if (!target) return -4;
@@ -6614,7 +6732,7 @@ ${functionBody}
   
   function _environ_get(__environ, environ_buf) {
   if (ENVIRONMENT_IS_PTHREAD)
-    return proxyToMainThread(14, 0, 1, __environ, environ_buf);
+    return proxyToMainThread(18, 0, 1, __environ, environ_buf);
   
       var bufSize = 0;
       var envp = 0;
@@ -6634,7 +6752,7 @@ ${functionBody}
   
   function _environ_sizes_get(penviron_count, penviron_buf_size) {
   if (ENVIRONMENT_IS_PTHREAD)
-    return proxyToMainThread(15, 0, 1, penviron_count, penviron_buf_size);
+    return proxyToMainThread(19, 0, 1, penviron_count, penviron_buf_size);
   
       var strings = getEnvStrings();
       HEAPU32[((penviron_count)>>2)] = strings.length;
@@ -6653,7 +6771,7 @@ ${functionBody}
   
   function _fd_close(fd) {
   if (ENVIRONMENT_IS_PTHREAD)
-    return proxyToMainThread(16, 0, 1, fd);
+    return proxyToMainThread(20, 0, 1, fd);
   
   try {
   
@@ -6690,7 +6808,7 @@ ${functionBody}
   
   function _fd_read(fd, iov, iovcnt, pnum) {
   if (ENVIRONMENT_IS_PTHREAD)
-    return proxyToMainThread(17, 0, 1, fd, iov, iovcnt, pnum);
+    return proxyToMainThread(21, 0, 1, fd, iov, iovcnt, pnum);
   
   try {
   
@@ -6711,7 +6829,7 @@ ${functionBody}
   
   function _fd_seek(fd, offset, whence, newOffset) {
   if (ENVIRONMENT_IS_PTHREAD)
-    return proxyToMainThread(18, 0, 1, fd, offset, whence, newOffset);
+    return proxyToMainThread(22, 0, 1, fd, offset, whence, newOffset);
   
     offset = bigintToI53Checked(offset);
   
@@ -6758,7 +6876,7 @@ ${functionBody}
   
   function _fd_write(fd, iov, iovcnt, pnum) {
   if (ENVIRONMENT_IS_PTHREAD)
-    return proxyToMainThread(19, 0, 1, fd, iov, iovcnt, pnum);
+    return proxyToMainThread(23, 0, 1, fd, iov, iovcnt, pnum);
   
   try {
   
@@ -7593,7 +7711,6 @@ if (Module['printErr']) err = Module['printErr'];
   'requestPointerLock',
   'fillVisibilityChangeEventData',
   'registerVisibilityChangeEventCallback',
-  'registerTouchEventCallback',
   'fillGamepadEventData',
   'registerGamepadEventCallback',
   'registerBeforeUnloadEventCallback',
@@ -7778,6 +7895,7 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'registerWheelEventCallback',
   'currentFullscreenStrategy',
   'restoreOldWindowedStyle',
+  'registerTouchEventCallback',
   'setCanvasElementSizeCallingThread',
   'setCanvasElementSizeMainThread',
   'UNWIND_CACHE',
@@ -8042,6 +8160,10 @@ var proxiedFunctionTable = [
   _emscripten_set_mousedown_callback_on_thread,
   _emscripten_set_mousemove_callback_on_thread,
   _emscripten_set_mouseup_callback_on_thread,
+  _emscripten_set_touchcancel_callback_on_thread,
+  _emscripten_set_touchend_callback_on_thread,
+  _emscripten_set_touchmove_callback_on_thread,
+  _emscripten_set_touchstart_callback_on_thread,
   _emscripten_set_wheel_callback_on_thread,
   _environ_get,
   _environ_sizes_get,
@@ -8273,6 +8395,14 @@ function assignWasmExports(wasmExports) {
     emscripten_set_mousemove_callback_on_thread: _emscripten_set_mousemove_callback_on_thread,
     /** @export */
     emscripten_set_mouseup_callback_on_thread: _emscripten_set_mouseup_callback_on_thread,
+    /** @export */
+    emscripten_set_touchcancel_callback_on_thread: _emscripten_set_touchcancel_callback_on_thread,
+    /** @export */
+    emscripten_set_touchend_callback_on_thread: _emscripten_set_touchend_callback_on_thread,
+    /** @export */
+    emscripten_set_touchmove_callback_on_thread: _emscripten_set_touchmove_callback_on_thread,
+    /** @export */
+    emscripten_set_touchstart_callback_on_thread: _emscripten_set_touchstart_callback_on_thread,
     /** @export */
     emscripten_set_wheel_callback_on_thread: _emscripten_set_wheel_callback_on_thread,
     /** @export */

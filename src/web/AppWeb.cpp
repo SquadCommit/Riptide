@@ -69,6 +69,16 @@ static float g_dragDist = 0.0f;
 // Keys currently held (WASD/arrow pan), set by the key callbacks.
 static bool g_keyL = false, g_keyR = false, g_keyU = false, g_keyD = false;
 
+// Touch state (mobile). g_gestureN is the finger count the baselines below are
+// calibrated for; a mismatch in onTouchMove recalibrates instead of applying a
+// jump. One finger drags (rotate/orbit), two fingers pinch-zoom + pan.
+static int g_gestureN = 0;
+static double g_tPrevX = 0, g_tPrevY = 0;   // one-finger previous position
+static double g_tPrevCX = 0, g_tPrevCY = 0; // two-finger centroid
+static double g_tPrevDist = 0;              // two-finger spread
+static double g_tStartX = 0, g_tStartY = 0; // tap origin
+static float g_tDrag = 0.0f;                // accumulated movement (tap vs drag)
+
 // Slab2 subduction geometry (fetched as a pre-converted bundle at boot;
 // null until then -> fallback parameters).
 static std::unique_ptr<tsunami_lab::io::Slab2Reader> g_slab2;
@@ -601,6 +611,29 @@ static void triggerScenario(int i_idx) {
 
 // Canvas input (HTML5 events; coordinates are CSS pixels on the canvas)
 
+// Shared click/tap action (mouse click or single-finger tap): on the globe,
+// propose a selection over a tapped subduction zone; in the region view, place
+// a station or set the epicentre. No-op while a sim runs (except stations).
+static void handleTapAt(float i_mx, float i_my) {
+  if (g_state == AppState::REGION_SELECT) {
+    if (g_slab2 && g_globeView && g_globeView->showSlab2Overlay) {
+      float l_lon, l_lat;
+      if (g_globeView->screenToLonLat(i_mx, i_my, g_screenW, g_screenH, g_camera,
+                                      l_lon, l_lat) &&
+          g_slab2->query(l_lon, l_lat).valid)
+        g_globeView->setSelection(
+            suggestSlabSelection(l_lon, l_lat, g_globeView->maxSelDeg));
+    }
+  } else if (g_state == AppState::REGION_PREVIEW) {
+    if (g_placingStation) {
+      placeStationAtScreen(i_mx, i_my);
+      g_placingStation = false;
+    } else if (!simRunning()) {
+      onRegionClick(i_mx, i_my);
+    }
+  }
+}
+
 static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent* i_e, void*) {
   g_lastX = i_e->targetX;
   g_lastY = i_e->targetY;
@@ -633,25 +666,12 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent* i_e, void*) {
       // rectangle around that spot as a quick start for a simulation region.
       const bool l_isClick =
           std::abs(g_lastX - g_pressX) + std::abs(g_lastY - g_pressY) < 5.0;
-      if (l_isClick && g_slab2 && g_globeView->showSlab2Overlay) {
-        float l_lon, l_lat;
-        if (g_globeView->screenToLonLat((float)g_lastX, (float)g_lastY,
-                                        g_screenW, g_screenH, g_camera, l_lon,
-                                        l_lat) &&
-            g_slab2->query(l_lon, l_lat).valid)
-          g_globeView->setSelection(
-              suggestSlabSelection(l_lon, l_lat, g_globeView->maxSelDeg));
-      }
+      if (l_isClick)
+        handleTapAt((float)g_lastX, (float)g_lastY);
     } else if (g_state == AppState::REGION_PREVIEW && g_dragDist < 5.0f) {
-      if (g_placingStation) {
-        // Station placement is allowed while a sim is running (watch a new
-        // gauge from here on); the epicentre below is not.
-        placeStationAtScreen((float)g_lastX, (float)g_lastY);
-        g_placingStation = false;
-      } else if (!simRunning()) {
-        // Released without dragging: treat as a click and pick an epicentre.
-        onRegionClick((float)g_lastX, (float)g_lastY);
-      }
+      // Station placement is allowed while a sim is running (watch a new gauge
+      // from here on); the epicentre pick inside handleTapAt is not.
+      handleTapAt((float)g_lastX, (float)g_lastY);
     }
   }
   if (i_e->button == 1)
@@ -690,6 +710,101 @@ static EM_BOOL onWheel(int, const EmscriptenWheelEvent* i_e, void*) {
     l_dy *= 40.0;
   g_camera.onScroll((float)(-l_dy / 100.0));
   return EM_TRUE; // prevent page scroll
+}
+
+// Touch input (mobile). Maps to the same camera ops as the mouse: one finger
+// rotates the globe / orbits the region view, two fingers pinch-zoom and pan,
+// a tap acts like a click (zone suggestion / epicentre / station).
+
+static void touchCentroid(const EmscriptenTouchEvent* i_e, double& o_cx,
+                          double& o_cy) {
+  int l_n = i_e->numTouches < 2 ? i_e->numTouches : 2;
+  o_cx = 0;
+  o_cy = 0;
+  for (int l_i = 0; l_i < l_n; l_i++) {
+    o_cx += i_e->touches[l_i].targetX;
+    o_cy += i_e->touches[l_i].targetY;
+  }
+  if (l_n > 0) {
+    o_cx /= l_n;
+    o_cy /= l_n;
+  }
+}
+
+static double touchSpread(const EmscriptenTouchEvent* i_e) {
+  const double l_dx = i_e->touches[0].targetX - i_e->touches[1].targetX;
+  const double l_dy = i_e->touches[0].targetY - i_e->touches[1].targetY;
+  return std::sqrt(l_dx * l_dx + l_dy * l_dy);
+}
+
+// (Re)calibrates the gesture baselines to the touches currently down.
+static void touchResync(const EmscriptenTouchEvent* i_e) {
+  g_gestureN = i_e->numTouches;
+  if (g_gestureN == 1) {
+    g_tPrevX = i_e->touches[0].targetX;
+    g_tPrevY = i_e->touches[0].targetY;
+  } else if (g_gestureN >= 2) {
+    touchCentroid(i_e, g_tPrevCX, g_tPrevCY);
+    g_tPrevDist = touchSpread(i_e);
+  }
+}
+
+static EM_BOOL onTouchStart(int, const EmscriptenTouchEvent* i_e, void*) {
+  if (i_e->numTouches == 1) {
+    g_tStartX = i_e->touches[0].targetX;
+    g_tStartY = i_e->touches[0].targetY;
+    g_tDrag = 0.0f;
+  } else {
+    g_tDrag = 1e9f; // multi-touch is never a tap
+  }
+  touchResync(i_e);
+  return EM_TRUE;
+}
+
+static EM_BOOL onTouchMove(int, const EmscriptenTouchEvent* i_e, void*) {
+  const int l_n = i_e->numTouches;
+  // Finger count changed mid-gesture (e.g. a second finger landed or lifted):
+  // recalibrate to the new set without applying a jump this frame.
+  if (l_n != g_gestureN) {
+    touchResync(i_e);
+    return EM_TRUE;
+  }
+
+  if (l_n == 1) {
+    const float l_dx = (float)(i_e->touches[0].targetX - g_tPrevX);
+    const float l_dy = (float)(i_e->touches[0].targetY - g_tPrevY);
+    g_tPrevX = i_e->touches[0].targetX;
+    g_tPrevY = i_e->touches[0].targetY;
+    g_tDrag += std::abs(l_dx) + std::abs(l_dy);
+    // Globe: rotate; region: orbit — both are Camera::onMouseDrag.
+    g_camera.onMouseDrag(l_dx, l_dy);
+  } else if (l_n >= 2) {
+    double l_cx, l_cy;
+    touchCentroid(i_e, l_cx, l_cy);
+    const double l_dist = touchSpread(i_e);
+    // Pinch: spreading fingers zoom in (positive onScroll), like the wheel.
+    g_camera.onScroll((float)((l_dist - g_tPrevDist) / 80.0));
+    // Centroid drag: pan the region map / rotate the globe.
+    const float l_dcx = (float)(l_cx - g_tPrevCX);
+    const float l_dcy = (float)(l_cy - g_tPrevCY);
+    if (g_state == AppState::REGION_PREVIEW)
+      g_camera.onMiddleDrag(l_dcx, l_dcy);
+    else
+      g_camera.onMouseDrag(l_dcx, l_dcy);
+    g_tPrevCX = l_cx;
+    g_tPrevCY = l_cy;
+    g_tPrevDist = l_dist;
+  }
+  return EM_TRUE;
+}
+
+static EM_BOOL onTouchEnd(int, const EmscriptenTouchEvent*, void*) {
+  // A single-finger gesture that barely moved is a tap.
+  if (g_gestureN == 1 && g_tDrag < 8.0f)
+    handleTapAt((float)g_tStartX, (float)g_tStartY);
+  // End the gesture; a remaining finger recalibrates on its next move.
+  g_gestureN = 0;
+  return EM_TRUE;
 }
 
 static bool matchKey(const EmscriptenKeyboardEvent* i_e, const char* i_code) {
@@ -825,6 +940,14 @@ static bool boot(uintptr_t i_globePtr,
                                   EM_TRUE, onMouseUp);
   emscripten_set_mousemove_callback("#canvas", nullptr, EM_TRUE, onMouseMove);
   emscripten_set_wheel_callback("#canvas", nullptr, EM_TRUE, onWheel);
+  // Touch (mobile). EM_TRUE preventDefaults the browser's own scroll/zoom;
+  // end/cancel on the document so a gesture ending off-canvas still releases.
+  emscripten_set_touchstart_callback("#canvas", nullptr, EM_TRUE, onTouchStart);
+  emscripten_set_touchmove_callback("#canvas", nullptr, EM_TRUE, onTouchMove);
+  emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr,
+                                   EM_TRUE, onTouchEnd);
+  emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, nullptr,
+                                      EM_TRUE, onTouchEnd);
   emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr,
                                   EM_FALSE, onKey);
   emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr,
