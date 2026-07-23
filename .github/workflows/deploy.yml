@@ -11,7 +11,7 @@ name: Deploy
 
 on:
   push:
-    branches: [ webapp ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
