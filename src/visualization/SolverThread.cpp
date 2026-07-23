@@ -92,6 +92,43 @@ void SolverThread::run() {
                       patches::BoundaryCondition::Outflow);
     m_solver.timeStep(l_scaling, m_mode);
 
+    // Froude-limit the velocity in wet cells. At the wet/dry front a thin
+    // cell (h just above c_dryTolerance) can pick up a spurious u = hu/h of
+    // hundreds to thousands of m/s. The CFL step correctly shrinks to stay
+    // stable, but after long inundating runs that single artefact drags the
+    // whole simulation down to a crawl (dt -> ~0). Capping |u| at
+    // k_maxFroude * sqrt(g*h) removes it in the dynamics, so both the F-wave
+    // scheme and the next maxWaveSpeed() see a physical velocity and dt stays
+    // healthy — without capping the CFL estimate itself, which would leave
+    // the true velocity uncapped and let the scheme diverge. Deep water has
+    // Fr ~ 0 and is untouched; genuine flow up to this Froude number
+    // (supercritical bores included) is preserved. Writes go to the buffer
+    // getMomentum*() reads (the post-step m_step half), which the next step
+    // consumes; setMomentum*() would target the wrong half.
+    constexpr t_real k_maxFroude = t_real(4);
+    {
+      const t_real* l_hArr = m_solver.getHeight();
+      t_real* l_huArr = const_cast<t_real*>(m_solver.getMomentumX());
+      t_real* l_hvArr = const_cast<t_real*>(m_solver.getMomentumY());
+      for (t_idx l_y = 0; l_y < m_ny; l_y++) {
+        for (t_idx l_x = 0; l_x < m_nx; l_x++) {
+          const t_idx l_i = l_x + l_y * l_stride;
+          const t_real l_hc = l_hArr[l_i];
+          if (l_hc <= c_dryTolerance)
+            continue;
+          const t_real l_hu = l_huArr[l_i];
+          const t_real l_hv = l_hvArr[l_i];
+          const t_real l_speed = std::sqrt(l_hu * l_hu + l_hv * l_hv) / l_hc;
+          const t_real l_speedCap = k_maxFroude * std::sqrt(g * l_hc);
+          if (l_speed > l_speedCap) {
+            const t_real l_f = l_speedCap / l_speed;
+            l_huArr[l_i] = l_hu * l_f;
+            l_hvArr[l_i] = l_hv * l_f;
+          }
+        }
+      }
+    }
+
     const t_real* l_h = m_solver.getHeight();
     for (t_idx l_y = 0; l_y < m_ny; l_y++)
       std::copy(l_h + l_y * l_stride, l_h + l_y * l_stride + m_nx,
