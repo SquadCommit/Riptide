@@ -63,7 +63,9 @@ export function Panel({
         className,
       )}
     >
-      <div className="panel-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+      {/* Inner scroll is desktop-only; on mobile the card sits in the
+          MobileDock, which owns the single scroll region. */}
+      <div className="panel-scroll space-y-5 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {children}
       </div>
       {footer && <div className="border-t border-border p-3">{footer}</div>}
@@ -85,9 +87,11 @@ export function SidePanel({
   return (
     <Panel
       footer={footer}
+      // Mobile: a full-width card that flows inside the MobileDock.
+      // Desktop (lg+): a floating panel anchored to a screen edge.
       className={cn(
-        "absolute top-5 z-20 max-h-[calc(100%-2.5rem)] w-80",
-        side === "left" ? "left-5" : "right-5",
+        "w-full lg:absolute lg:top-5 lg:z-20 lg:max-h-[calc(100%-2.5rem)] lg:w-80",
+        side === "left" ? "lg:left-5" : "lg:right-5",
       )}
     >
       {children}

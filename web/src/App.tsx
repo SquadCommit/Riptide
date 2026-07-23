@@ -4,16 +4,19 @@ import { HistoryPanel } from "@/components/HistoryPanel";
 import { HoverTooltip } from "@/components/HoverTooltip";
 import { Legends } from "@/components/Legends";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { MobileDock } from "@/components/MobileDock";
 import { RegionPanel } from "@/components/RegionPanel";
 import { ScenarioPanel } from "@/components/ScenarioPanel";
 import { SimHud } from "@/components/SimHud";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StationsCard } from "@/components/StationsCard";
 import { TopBar } from "@/components/TopBar";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTsunami } from "@/hooks/useTsunami";
 
 export default function App() {
   const viewRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   const {
     mod,
     boot,
@@ -30,6 +33,8 @@ export default function App() {
     clearStations,
   } = useTsunami(viewRef);
 
+  const inGlobe = snapshot?.state === "globe";
+
   return (
     <div ref={viewRef} className="relative h-full w-full">
       {/* The wasm renderer binds "#canvas" at boot — must exist up front. */}
@@ -45,7 +50,39 @@ export default function App() {
         <>
           <TopBar snapshot={snapshot} />
           <SimHud snapshot={snapshot} />
-          {snapshot.state === "globe" ? (
+
+          {isMobile ? (
+            <MobileDock title={inGlobe ? "Szenarien & Gebiet" : "Simulation & Quelle"}>
+              {inGlobe ? (
+                <>
+                  <HistoryPanel
+                    scenarios={scenarios}
+                    scenarioLoading={scenarioLoading}
+                    loadScenario={loadScenario}
+                  />
+                  <ScenarioPanel
+                    mod={mod}
+                    snapshot={snapshot}
+                    selectionLoading={selectionLoading}
+                    loadSelection={loadSelection}
+                  />
+                </>
+              ) : (
+                <>
+                  <RegionPanel mod={mod} snapshot={snapshot} />
+                  <SourcePanel mod={mod} snapshot={snapshot} />
+                  <StationsCard
+                    snapshot={snapshot}
+                    stations={stations}
+                    togglePlacingStation={togglePlacingStation}
+                    removeStation={removeStation}
+                    renameStation={renameStation}
+                    clearStations={clearStations}
+                  />
+                </>
+              )}
+            </MobileDock>
+          ) : inGlobe ? (
             <>
               <ScenarioPanel
                 mod={mod}
@@ -76,6 +113,7 @@ export default function App() {
               <SourcePanel mod={mod} snapshot={snapshot} />
             </>
           )}
+
           <Legends snapshot={snapshot} />
           <HoverTooltip mod={mod} snapshot={snapshot} viewRef={viewRef} />
         </>

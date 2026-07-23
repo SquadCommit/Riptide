@@ -23,7 +23,7 @@ export function StationsCard({
   clearStations: () => void;
 }) {
   return (
-    <Panel className="min-h-0 w-80 flex-1">
+    <Panel className="w-full lg:min-h-0 lg:w-80 lg:flex-1">
       <StationsPanel
         snapshot={snapshot}
         stations={stations}

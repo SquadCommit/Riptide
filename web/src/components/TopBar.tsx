@@ -26,15 +26,18 @@ export function TopBar({ snapshot }: { snapshot: AppSnapshot }) {
         <span className="text-sm font-semibold tracking-[0.2em]">
           TSUNAMI<span className="text-primary">LAB</span>
         </span>
-        <div className="mx-1 h-4 w-px bg-border" />
-        {crumb("Gebiet", !inRegion)}
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-        {crumb("Region", inRegion && !simRunning)}
-        <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-        {crumb("Simulation", simRunning)}
+        {/* Breadcrumb is space-hungry — hide it on narrow (mobile) screens. */}
+        <div className="hidden items-center gap-3 sm:flex">
+          <div className="mx-1 h-4 w-px bg-border" />
+          {crumb("Gebiet", !inRegion)}
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+          {crumb("Region", inRegion && !simRunning)}
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+          {crumb("Simulation", simRunning)}
+        </div>
         {snapshot.slab.available && (
           <>
-            <div className="mx-1 h-4 w-px bg-border" />
+            <div className="mx-1 hidden h-4 w-px bg-border sm:block" />
             <Badge variant="cyan" className="text-[10px]">
               Slab2 aktiv
             </Badge>

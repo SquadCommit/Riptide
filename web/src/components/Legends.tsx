@@ -76,7 +76,7 @@ export function Legends({ snapshot }: { snapshot: AppSnapshot }) {
   const bathyField = inRegion && snapshot.region?.field === 0;
   const anom = snapshot.region?.waterAnom ?? 1;
   return (
-    <div className="pointer-events-none absolute bottom-5 right-5 z-20 flex flex-col gap-2.5">
+    <div className="pointer-events-none absolute bottom-5 right-5 z-20 hidden flex-col gap-2.5 lg:flex">
       {snapshot.sim.running && bathyField && (
         <LegendBar
           title="Wellenhöhe (Anomalie)"
