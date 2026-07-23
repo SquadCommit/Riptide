@@ -21,6 +21,29 @@ SolverThread::SolverThread(SimBuffer& io_buffer,
 
 SolverThread::~SolverThread() { stop(); }
 
+void SolverThread::addStation(t_idx i_ix, t_idx i_iy) {
+  std::lock_guard<std::mutex> l_lock(m_stationsMtx);
+  m_stations.push_back({i_ix, i_iy, {}});
+}
+
+void SolverThread::clearStations() {
+  std::lock_guard<std::mutex> l_lock(m_stationsMtx);
+  m_stations.clear();
+}
+
+size_t SolverThread::stationCount() const {
+  std::lock_guard<std::mutex> l_lock(m_stationsMtx);
+  return m_stations.size();
+}
+
+std::vector<SolverThread::StationPoint>
+SolverThread::stationSeries(size_t i_idx) const {
+  std::lock_guard<std::mutex> l_lock(m_stationsMtx);
+  if (i_idx >= m_stations.size())
+    return {};
+  return m_stations[i_idx].samples;
+}
+
 t_real SolverThread::maxWaveSpeed() {
   const t_real* l_h = m_solver.getHeight();
   const t_real* l_hu = m_solver.getMomentumX();
@@ -136,7 +159,30 @@ void SolverThread::run() {
 
     m_buffer.write(l_frame.data(), m_nx * m_ny);
 
-    m_simTimeAccum.store(m_simTimeAccum.load() + l_dt); // single writer
+    const double l_time = m_simTimeAccum.load() + l_dt;
+    m_simTimeAccum.store(l_time); // single writer
+
+    {
+      std::lock_guard<std::mutex> l_lock(m_stationsMtx);
+      if (!m_stations.empty()) {
+        const t_real* l_b = m_solver.getBathymetry();
+        for (StationRec& l_st : m_stations) {
+          const t_idx l_i = l_st.ix + l_st.iy * l_stride;
+          const float l_eta = (float)l_h[l_i] + (float)l_b[l_i];
+          l_st.samples.push_back({(float)l_time, l_eta});
+          // Halve resolution once the cap is hit instead of dropping/
+          // truncating — keeps the whole run's shape visible in a chart
+          // rather than only its most recent window.
+          if (l_st.samples.size() > k_maxStationSamples) {
+            std::vector<StationPoint> l_thinned;
+            l_thinned.reserve(l_st.samples.size() / 2 + 1);
+            for (size_t l_k = 0; l_k < l_st.samples.size(); l_k += 2)
+              l_thinned.push_back(l_st.samples[l_k]);
+            l_st.samples.swap(l_thinned);
+          }
+        }
+      }
+    }
 
     const double l_comp =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - l_t0)

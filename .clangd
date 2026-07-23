@@ -2,4 +2,4 @@ CompileFlags:
   Add:
     - -std=c++11
     - -isystem
-    - submodules/Catch2/single_include
+    - build/_deps/catch2-src/single_include

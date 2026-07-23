@@ -47,13 +47,13 @@ Setting :math:`A = 0` recovers the original flat-bottom shock-shock problem.
 
 |ss| |ssb| |ssbnc|
 
-.. |ss| image:: ../../../simulations/visualizations/non_zero_source_term/shockshock.gif
+.. |ss| image:: ../_images/simulations/non_zero_source_term/shockshock.gif
    :width: 30%
 
-.. |ssb| image:: ../../../simulations/visualizations/non_zero_source_term/shockshock_bathy.gif
+.. |ssb| image:: ../_images/simulations/non_zero_source_term/shockshock_bathy.gif
    :width: 30%
 
-.. |ssbnc| image:: ../../../simulations/visualizations/non_zero_source_term/shockshock_bathy_nc.gif
+.. |ssbnc| image:: ../_images/simulations/non_zero_source_term/shockshock_bathy_nc.gif
    :width: 30%
 
 
@@ -64,12 +64,12 @@ increased water height travels back.
 
 One-sided reflection (right boundary):
 
-.. image:: ../../../simulations/visualizations/bathymetry_boundary_conditions/dam_reflect.gif
+.. image:: ../_images/simulations/bathymetry_boundary_conditions/dam_reflect.gif
    :width: 40%
 
 Two-sided reflection (waves bouncing between both walls):
 
-.. image:: ../../../simulations/visualizations/bathymetry_boundary_conditions/dam_reflect_both_walls.gif
+.. image:: ../_images/simulations/bathymetry_boundary_conditions/dam_reflect_both_walls.gif
    :width: 40%
 
 3.3. Hydraulic Jumps
@@ -90,7 +90,7 @@ on the domain :math:`(0, 25)` with bathymetry
 
 and initial conditions :math:`h(x, 0) = -b(x)`, :math:`hu(x, 0) = 4.42`.
 
-.. image:: ../../../simulations/visualizations/hydraulic_pumps/subcritical.gif
+.. image:: ../_images/simulations/hydraulic_pumps/subcritical.gif
    :width: 60%
 
 **Maximum Froude number at t = 0**
@@ -129,7 +129,7 @@ The supercritical setup uses the same domain with bathymetry
 and initial conditions :math:`h(x, 0) = -b(x)`, :math:`hu(x, 0) = 0.18`.
 
 
-.. image:: ../../../simulations/visualizations/hydraulic_pumps/supercritical.gif
+.. image:: ../_images/simulations/hydraulic_pumps/supercritical.gif
    :width: 60%
 
 **Maximum Froude number at** :math:`t = 0`
@@ -239,7 +239,7 @@ the visualization. This is physically expected: in the open ocean (depth
 The wave-to-depth ratio is on the order of :math:`10/5000 = 0.2\%`, making it
 nearly invisible at the scale of the full bathymetry cross-section.
 
-.. image:: ../../../simulations/visualizations/tohoku/tohoku_tsunami_10.gif
+.. image:: ../_images/simulations/tohoku/tohoku_tsunami_10.gif
    :width: 60%
 
 Modified Displacement (3.4.5, optional)
@@ -252,7 +252,7 @@ rightward wave leaves the domain through the outflow boundary, while the
 leftward wave travels toward shore and reflects off the left boundary
 (reflecting BC).
 
-.. image:: ../../../simulations/visualizations/tohoku/tohoku_tsunami_1000.gif
+.. image:: ../_images/simulations/tohoku/tohoku_tsunami_1000.gif
    :width: 60%
 
 The higher displacement demonstrates the expected behavior: larger initial

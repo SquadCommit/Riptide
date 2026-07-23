@@ -41,7 +41,7 @@ public:
   fromMagnitudeAndLocation(double i_mw,
                            double i_lon,
                            double i_lat,
-                           io::Slab2Reader& i_slab2,
+                           const io::Slab2Reader& i_slab2,
                            double i_rake = 90.0,
                            double i_nu = 0.25) {
     io::Slab2Point l_pt = i_slab2.query(i_lon, i_lat);

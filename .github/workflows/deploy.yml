@@ -1,0 +1,77 @@
+##
+# Deploys the web app to GitHub Pages. Fully static hosting: the committed
+# wasm bundle (web/public/wasm), the extracted data grids (cached — on a
+# miss the runner downloads GEBCO/Slab2 and regenerates them) and the React
+# build. COOP/COEP isolation comes from coi-serviceworker at runtime, since
+# Pages cannot send custom headers.
+#
+# One-time repo setup: Settings -> Pages -> Source = "GitHub Actions".
+##
+name: Deploy
+
+on:
+  push:
+    branches: [ webapp ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deployments at once; newer pushes win.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore data grids
+        id: data-cache
+        uses: actions/cache@v6
+        with:
+          path: web/public/data
+          key: web-data-${{ hashFiles('tools/make_web_data.py', 'tools/fetch_data.py') }}
+
+      # The GEBCO download needs ~12 GB scratch (4.3 GB zip + 7.5 GB nc);
+      # the stock runner has ~14 GB free, so drop the biggest unused SDKs.
+      - name: Free disk space for GEBCO
+        if: steps.data-cache.outputs.cache-hit != 'true'
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache/CodeQL
+
+      - name: Generate data grids (GEBCO + Slab2 auto-download)
+        if: steps.data-cache.outputs.cache-hit != 'true'
+        run: |
+          pip install netCDF4 numpy
+          python3 tools/make_web_data.py
+          rm -rf data
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

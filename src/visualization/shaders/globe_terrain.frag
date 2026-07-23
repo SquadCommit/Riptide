@@ -1,5 +1,6 @@
 #version 330 core
 in float vElev;
+in vec3 vNormal;
 out vec4 fragColor;
 
 // Hypsometric tint with fixed elevation breakpoints, identical to the region
@@ -22,5 +23,11 @@ vec3 colormap(float h) {
 }
 
 void main() {
-    fragColor = vec4(colormap(vElev), 1.0);
+    // Simple fixed-direction Lambertian term so the sphere reads as a globe
+    // (shaded terminator) instead of a flat-shaded disc; colours stay the
+    // same hypsometric tint used by the region view.
+    vec3 n = normalize(vNormal);
+    vec3 lightDir = normalize(vec3(0.4, 0.6, 0.7));
+    float diff = 0.55 + 0.45 * max(dot(n, lightDir), 0.0);
+    fragColor = vec4(colormap(vElev) * diff, 1.0);
 }

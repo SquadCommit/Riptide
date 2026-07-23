@@ -38,33 +38,9 @@ struct Slab2Point {
 class Slab2Reader {
 public:
   /**
-   * Loads every Slab2 region grid present under data/ (see ensureAvailable).
-   **/
-  Slab2Reader();
-
-  /**
-   * Samples the slab geometry at a location via nearest neighbour. Where
-   * several regions overlap, the closest valid sample wins.
-   *
-   * @param i_lon longitude in degrees.
-   * @param i_lat latitude in degrees.
-   * @return the sampled point; valid == false where no slab covers the
-   * location.
-   **/
-  Slab2Point query(double i_lon, double i_lat) const;
-
-  /**
-   * Ensures the global Slab2 region grids exist under data/, downloading any
-   * missing ones from USGS ScienceBase on first use (analogous to
-   * gebco::ensureAvailable). Blocks (and prints progress) while downloading.
-   *
-   * @return true if at least one complete region is available.
-   **/
-  static bool ensureAvailable();
-
-private:
-  /**
    * One region's uniformly-spaced grid; values stored row-major (y, x).
+   * Public so alternative loaders (the web build parses pre-converted
+   * binary grids instead of NetCDF files) can construct a reader.
    **/
   struct Grid {
     //! coordinate of sample (0, 0).
@@ -87,6 +63,38 @@ private:
     std::vector<float> dip;
   };
 
+  /**
+   * Loads every Slab2 region grid present under data/ (see ensureAvailable).
+   **/
+  Slab2Reader();
+
+  /**
+   * Constructs a reader from already-parsed region grids (web build).
+   **/
+  explicit Slab2Reader(std::vector<Grid>&& i_grids)
+      : m_grids(std::move(i_grids)) {}
+
+  /**
+   * Samples the slab geometry at a location via nearest neighbour. Where
+   * several regions overlap, the closest valid sample wins.
+   *
+   * @param i_lon longitude in degrees.
+   * @param i_lat latitude in degrees.
+   * @return the sampled point; valid == false where no slab covers the
+   * location.
+   **/
+  Slab2Point query(double i_lon, double i_lat) const;
+
+  /**
+   * Ensures the global Slab2 region grids exist under data/, downloading any
+   * missing ones from USGS ScienceBase on first use (analogous to
+   * gebco::ensureAvailable). Blocks (and prints progress) while downloading.
+   *
+   * @return true if at least one complete region is available.
+   **/
+  static bool ensureAvailable();
+
+private:
   //! loaded region grids, one per available Slab2 region.
   std::vector<Grid> m_grids;
 };

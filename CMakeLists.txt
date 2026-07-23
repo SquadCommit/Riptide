@@ -4,12 +4,23 @@ project(tsunami_lab CXX C)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ---------- third-party dependencies (fetched at configure time) ----------
+# Pinned to exact commits; downloaded once into <build>/_deps and cached.
+include(FetchContent)
+FetchContent_Declare(glm            # 1.0.x master @ 0af55cce
+  URL https://github.com/g-truc/glm/archive/0af55ccecd98d4e5a8d1fad7de25ba429d60e863.tar.gz)
+FetchContent_Declare(pugixml        # v1.15 + fixes @ 06321884
+  URL https://github.com/zeux/pugixml/archive/063218842544de8095ea1b7419b28df02866c20a.tar.gz)
+FetchContent_Declare(Catch2         # v2.13.10
+  URL https://github.com/catchorg/Catch2/archive/refs/tags/v2.13.10.tar.gz)
+# header-only glm::glm, nothing to compile (cache var: glm pins CMP0077 to OLD)
+set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)
+
 # ---------- build options (replicate SConstruct variables) ----------
 set(BUILD_MODE "release" CACHE STRING "release | debug | release+san | debug+san")
 set(OPT_LEVEL  "o2"      CACHE STRING "o2 | o3 | ofast")
 set(ARCH       "none"    CACHE STRING "none | native | icelake-server")
 option(ENABLE_OMP "Enable OpenMP"          OFF)
-option(ENABLE_VIZ "Build viz target"       ON)
 option(ENABLE_INLINE "Allow inlining"      ON)
 option(ENABLE_LTO "Enable link-time / interprocedural optimization" ON)
 
@@ -78,6 +89,52 @@ else()
   add_compile_options(-Wno-unknown-pragmas)
 endif()
 
+# ---------- web build (Emscripten / WebAssembly + WebGL2) ----------
+# Configure with:  emcmake cmake -B build-web && cmake --build build-web
+# Produces web/public/wasm/tsunami_web.{js,wasm,worker.js}; serve web/ with
+# COOP/COEP headers (see web/serve.py) — pthreads need SharedArrayBuffer.
+if(EMSCRIPTEN)
+  FetchContent_MakeAvailable(glm)   # web build needs only glm
+  add_executable(tsunami_web
+    src/web/AppWeb.cpp
+    src/web/WebData.cpp
+    src/visualization/GlobeView.cpp
+    src/visualization/RegionView.cpp
+    src/visualization/SolverThread.cpp
+    src/patches/WavePropagation2d/WavePropagation2d.cpp
+    src/displacement/OkadaDisplacement.cpp
+    src/io/Slab2Query.cpp
+    src/web/Slab2Web.cpp
+  )
+  target_include_directories(tsunami_web PRIVATE src)
+  target_link_libraries(tsunami_web PRIVATE glm::glm)
+  target_compile_definitions(tsunami_web PRIVATE
+    SHADER_DIR="/shaders")         # virtual FS path of the embedded shaders
+  target_compile_options(tsunami_web PRIVATE -pthread)
+  target_link_options(tsunami_web PRIVATE
+    -pthread
+    "SHELL:-s PTHREAD_POOL_SIZE=16"
+    "SHELL:-s USE_WEBGL2=1"
+    "SHELL:-s MIN_WEBGL_VERSION=2"
+    "SHELL:-s MAX_WEBGL_VERSION=2"
+    # Fixed-size heap: growth + pthreads left the GL bindings with stale heap
+    # views mid-boot (every glBufferData during a growth burst failed with
+    # INVALID_VALUE), and a fixed heap is the recommended pthreads setup anyway.
+    "SHELL:-s INITIAL_MEMORY=1610612736"
+    "SHELL:-s STACK_SIZE=1048576"
+    "SHELL:-s MODULARIZE=1"
+    "SHELL:-s EXPORT_NAME=createTsunamiModule"
+    "SHELL:-s ENVIRONMENT=web,worker"
+    "SHELL:-s EXPORTED_FUNCTIONS=_malloc,_free"
+    "SHELL:-s EXPORTED_RUNTIME_METHODS=HEAPU8"
+    -lembind
+    "SHELL:--embed-file ${CMAKE_SOURCE_DIR}/src/visualization/shaders@/shaders")
+  set_target_properties(tsunami_web PROPERTIES
+    CXX_STANDARD 17                # embind needs C++17; superset of the core's C++11
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/web/public/wasm)
+  return()
+endif()
+
 # ---------- threads (SolverThread background loop) ----------
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -89,11 +146,10 @@ execute_process(COMMAND ${NC_CONFIG} --prefix
 set(NETCDF_INCLUDE "${NETCDF_PREFIX}/include")
 set(NETCDF_LIBDIR  "${NETCDF_PREFIX}/lib")
 
-# ---------- submodules ----------
-add_subdirectory(submodules/pugixml  EXCLUDE_FROM_ALL)
+# ---------- third-party (native build) ----------
+FetchContent_MakeAvailable(pugixml Catch2)
 # Suppress global -Werror for pugixml so unknown/irrelevant warnings don't break the build
 target_compile_options(pugixml-static PRIVATE -w)
-add_subdirectory(submodules/Catch2   EXCLUDE_FROM_ALL)
 
 # ---------- solver library ----------
 add_library(solver_lib STATIC
@@ -118,6 +174,7 @@ add_library(solver_lib STATIC
   src/io/csv/Csv.cpp
   src/io/stations/Stations.cpp
   src/io/Slab2Reader.cpp
+  src/io/Slab2Query.cpp
 )
 target_include_directories(solver_lib PUBLIC src ${NETCDF_INCLUDE})
 target_link_directories(solver_lib PUBLIC ${NETCDF_LIBDIR})
@@ -156,58 +213,4 @@ add_executable(tests
   src/io/stations/Stations.test.cpp
   src/io/netcdf/NetCDF.test.cpp
 )
-target_include_directories(tests PRIVATE submodules/Catch2/single_include)
-target_link_libraries(tests PRIVATE solver_lib)
-
-# ---------- visualization ----------
-if(ENABLE_VIZ)
-  find_package(OpenGL REQUIRED)
-  find_package(glfw3  REQUIRED)
-  find_package(glm    REQUIRED)
-
-  # GLAD — committed generated files, no submodule needed
-  add_library(glad STATIC thirdparty/glad/src/glad.c)
-  target_include_directories(glad PUBLIC thirdparty/glad/include)
-  # -w: suppress pedantic pointer-cast warnings in generated C code
-  # -O1: required by glibc _FORTIFY_SOURCE (active even in debug builds)
-  target_compile_options(glad PRIVATE -w -O1)
-
-  # ImGui — submodule, no own CMakeLists, so we build it manually
-  add_library(imgui STATIC
-    submodules/imgui/imgui.cpp
-    submodules/imgui/imgui_draw.cpp
-    submodules/imgui/imgui_widgets.cpp
-    submodules/imgui/imgui_tables.cpp
-    submodules/imgui/backends/imgui_impl_glfw.cpp
-    submodules/imgui/backends/imgui_impl_opengl3.cpp
-  )
-  target_include_directories(imgui PUBLIC
-    submodules/imgui
-    submodules/imgui/backends
-    thirdparty/glad/include
-  )
-  target_link_libraries(imgui PUBLIC glfw)
-  target_compile_options(imgui PRIVATE -w -O1)
-
-  # viz executable
-  add_executable(tsunami_lab_viz
-    src/main_viz.cpp
-    src/util/CpuAffinity.cpp
-    src/visualization/Window.cpp
-    src/visualization/GlobeView.cpp
-    src/visualization/Gebco.cpp
-    src/visualization/RegionView.cpp
-  )
-  target_include_directories(tsunami_lab_viz PRIVATE src thirdparty/glad/include)
-  target_compile_definitions(tsunami_lab_viz PRIVATE
-    SHADER_DIR="${CMAKE_SOURCE_DIR}/src/visualization/shaders")
-  target_link_libraries(tsunami_lab_viz PRIVATE solver_lib glad imgui glfw OpenGL::GL glm::glm)
-
-  if(APPLE)
-    target_link_libraries(tsunami_lab_viz PRIVATE
-      "-framework Cocoa"
-      "-framework IOKit"
-      "-framework CoreVideo"
-    )
-  endif()
-endif()
+target_link_libraries(tests PRIVATE solver_lib Catch2::Catch2)

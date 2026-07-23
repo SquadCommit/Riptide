@@ -4,6 +4,8 @@
 #include "io/Slab2Reader.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <thread>
 #include <vector>
 
 namespace tsunami_lab {
@@ -31,6 +33,35 @@ void main() {
 }
 )";
 
+// Inline shader for station (gauge) markers: flat-coloured verts, drawn once
+// as GL_LINES (the pole) and once as GL_POINTS (a round cap at the top) —
+// uCircle switches the point-only circular mask so it's never evaluated
+// (gl_PointCoord is only meaningful for GL_POINTS) during the line draw.
+static const char* k_stationVert = R"(#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aColor;
+uniform mat4 uVP;
+out vec3 vColor;
+void main() {
+    vColor = aColor;
+    gl_Position = uVP * vec4(aPos, 1.0);
+    gl_PointSize = 9.0;
+}
+)";
+
+static const char* k_stationFrag = R"(#version 330 core
+in vec3 vColor;
+uniform bool uCircle;
+out vec4 fragColor;
+void main() {
+    if (uCircle) {
+        vec2 d = gl_PointCoord - vec2(0.5);
+        if (dot(d, d) > 0.25) discard;
+    }
+    fragColor = vec4(vColor, 1.0);
+}
+)";
+
 void RegionView::init() {
   m_terrShader.buildFromFiles(SHADER_DIR "/region_terrain.vert",
                               SHADER_DIR "/region_terrain.frag");
@@ -39,6 +70,7 @@ void RegionView::init() {
   m_waterShader.buildFromFiles(SHADER_DIR "/region_water.vert",
                                SHADER_DIR "/region_water.frag");
   m_overlayShader.build(k_overlayVert, k_overlayFrag);
+  m_stationShader.build(k_stationVert, k_stationFrag);
 
   const float k_s = 100.0f;
   const float l_quad[8] = {-k_s, -k_s, k_s, -k_s, -k_s, k_s, k_s, k_s};
@@ -50,6 +82,58 @@ void RegionView::init() {
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
   glEnableVertexAttribArray(0);
   glBindVertexArray(0);
+
+  auto l_initStationVao = [](GLuint& io_vao, GLuint& io_vbo) {
+    glGenVertexArrays(1, &io_vao);
+    glGenBuffers(1, &io_vbo);
+    glBindVertexArray(io_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, io_vbo);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+                          nullptr);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+                          (const void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+  };
+  l_initStationVao(m_stationLineVao, m_stationLineVbo);
+  l_initStationVao(m_stationPointVao, m_stationPointVbo);
+}
+
+void RegionView::setStationMarkers(const std::vector<StationMarker>& i_markers) {
+  m_stationCount = (int)i_markers.size();
+  if (m_stationCount == 0)
+    return;
+
+  // 2 vertices (base, top) per marker for the pole.
+  std::vector<float> l_lines((size_t)m_stationCount * 2 * 6);
+  // 1 vertex (top) per marker for the cap.
+  std::vector<float> l_points((size_t)m_stationCount * 6);
+  for (int l_i = 0; l_i < m_stationCount; l_i++) {
+    const StationMarker& l_m = i_markers[(size_t)l_i];
+    float* l_base = &l_lines[(size_t)l_i * 12];
+    l_base[0] = l_m.worldX;
+    l_base[1] = 0.0f;
+    l_base[2] = l_m.worldZ;
+    l_base[3] = l_m.r;
+    l_base[4] = l_m.g;
+    l_base[5] = l_m.b;
+    float* l_top = l_base + 6;
+    l_top[0] = l_m.worldX;
+    l_top[1] = k_stationHeight;
+    l_top[2] = l_m.worldZ;
+    l_top[3] = l_m.r;
+    l_top[4] = l_m.g;
+    l_top[5] = l_m.b;
+    std::memcpy(&l_points[(size_t)l_i * 6], l_top, 6 * sizeof(float));
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, m_stationLineVbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(l_lines.size() * sizeof(float)),
+               l_lines.data(), GL_DYNAMIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, m_stationPointVbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(l_points.size() * sizeof(float)),
+               l_points.data(), GL_DYNAMIC_DRAW);
 }
 
 bool RegionView::load(const gebco::Region& i_region) {
@@ -57,6 +141,11 @@ bool RegionView::load(const gebco::Region& i_region) {
   const int l_h = i_region.h;
   if (l_w < 2 || l_h < 2)
     return false;
+
+  // Any station markers belonged to whatever region was loaded before —
+  // drop them immediately instead of leaving them positioned against the
+  // outgoing region's world scale until the frontend's next station poll.
+  m_stationCount = 0;
 
   lonMin = i_region.lonMin;
   lonMax = i_region.lonMax;
@@ -163,20 +252,27 @@ bool RegionView::load(const gebco::Region& i_region) {
   // One index buffer per LOD level (vertex stride doubles each level, until a
   // further level would no longer reduce the grid).
   m_numLods = 0;
+  m_minLod = -1;
+  constexpr size_t k_maxEboBytes = 256u << 20;
   std::vector<unsigned int> l_idx;
   for (int l_L = 0; l_L < k_maxLod; l_L++) {
     const int l_stride = 1 << l_L;
     if (l_L > 0 && l_stride >= l_w - 1 && l_stride >= l_h - 1)
       break;
-    lod::buildIndices(l_w, l_h, l_stride, l_idx);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebos[l_L]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 (GLsizeiptr)(l_idx.size() * sizeof(unsigned int)),
-                 l_idx.data(), GL_STATIC_DRAW);
-    m_idxCnts[l_L] = (GLsizei)l_idx.size();
+    m_idxCnts[l_L] = 0;
     m_numLods = l_L + 1;
+    lod::buildIndices(l_w, l_h, l_stride, l_idx);
+    const size_t l_bytes = l_idx.size() * sizeof(unsigned int);
+    if (l_bytes > k_maxEboBytes)
+      continue; // over budget — draw clamps to the finest resident level
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebos[l_L]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)l_bytes, l_idx.data(),
+                 GL_STATIC_DRAW);
+    m_idxCnts[l_L] = (GLsizei)l_idx.size();
+    if (m_minLod < 0)
+      m_minLod = l_L;
   }
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebos[0]);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebos[std::max(m_minLod, 0)]);
 
   // Resize the sea-level plane to the exact horizontal footprint of this
   // region.
@@ -232,52 +328,77 @@ void RegionView::computeDisplacementField(
   // elevation grid (always true after a successful load()).
   const bool l_hasElev = m_elev.size() == l_n && gridW > 1 && gridH > 1;
 
-  for (int j = 0; j < gridH; j++) {
-    for (int i = 0; i < gridW; i++) {
-      const size_t l_v = (size_t)j * gridW + i;
-      // Local east/north offset from the click point, in metres. World Z
-      // runs south to north as -lat, so +north = -dz.
-      double l_east = ((double)m_xz[l_v * 2 + 0] - i_worldX) / m_scaleXZ;
-      double l_north = -((double)m_xz[l_v * 2 + 1] - i_worldZ) / m_scaleXZ;
-      double l_uz = i_model.verticalDisplacement(l_east, l_north);
+  // The Okada evaluation is embarrassingly parallel over rows; in the wasm
+  // build this runs on a worker and fans out to further pthreads, cutting a
+  // large region from minutes to seconds.
+  auto l_rows = [&](int i_j0, int i_j1, float& o_rowsPeak) {
+    for (int j = i_j0; j < i_j1; j++) {
+      for (int i = 0; i < gridW; i++) {
+        const size_t l_v = (size_t)j * gridW + i;
+        // Local east/north offset from the click point, in metres. World Z
+        // runs south to north as -lat, so +north = -dz.
+        double l_east = ((double)m_xz[l_v * 2 + 0] - i_worldX) / m_scaleXZ;
+        double l_north = -((double)m_xz[l_v * 2 + 1] - i_worldZ) / m_scaleXZ;
+        double l_uz = i_model.verticalDisplacement(l_east, l_north);
 
-      if (l_hasElev) {
-        double l_uEast = 0.0, l_uNorth = 0.0;
-        i_model.horizontalDisplacement(l_east, l_north, l_uEast, l_uNorth);
-        if (l_uEast != 0.0 || l_uNorth != 0.0) {
-          // Central differences on the structured grid (one-sided at edges).
-          const int l_i0 = std::max(i - 1, 0);
-          const int l_i1 = std::min(i + 1, gridW - 1);
-          const int l_j0 = std::max(j - 1, 0);
-          const int l_j1 = std::min(j + 1, gridH - 1);
-          const size_t l_ve0 = (size_t)j * gridW + l_i0;
-          const size_t l_ve1 = (size_t)j * gridW + l_i1;
-          const size_t l_vn0 = (size_t)l_j0 * gridW + i;
-          const size_t l_vn1 = (size_t)l_j1 * gridW + i;
+        if (l_hasElev) {
+          double l_uEast = 0.0, l_uNorth = 0.0;
+          i_model.horizontalDisplacement(l_east, l_north, l_uEast, l_uNorth);
+          if (l_uEast != 0.0 || l_uNorth != 0.0) {
+            // Central differences on the structured grid (one-sided at edges).
+            const int l_i0 = std::max(i - 1, 0);
+            const int l_i1 = std::min(i + 1, gridW - 1);
+            const int l_j0 = std::max(j - 1, 0);
+            const int l_j1 = std::min(j + 1, gridH - 1);
+            const size_t l_ve0 = (size_t)j * gridW + l_i0;
+            const size_t l_ve1 = (size_t)j * gridW + l_i1;
+            const size_t l_vn0 = (size_t)l_j0 * gridW + i;
+            const size_t l_vn1 = (size_t)l_j1 * gridW + i;
 
-          double l_gradEast = 0.0, l_gradNorth = 0.0;
-          if (l_i1 != l_i0) {
-            double l_dEastM =
-                ((double)m_xz[l_ve1 * 2 + 0] - (double)m_xz[l_ve0 * 2 + 0]) /
-                m_scaleXZ;
-            l_gradEast = (m_elev[l_ve1] - m_elev[l_ve0]) / l_dEastM;
+            double l_gradEast = 0.0, l_gradNorth = 0.0;
+            if (l_i1 != l_i0) {
+              double l_dEastM =
+                  ((double)m_xz[l_ve1 * 2 + 0] - (double)m_xz[l_ve0 * 2 + 0]) /
+                  m_scaleXZ;
+              l_gradEast = (m_elev[l_ve1] - m_elev[l_ve0]) / l_dEastM;
+            }
+            if (l_j1 != l_j0) {
+              double l_dNorthM =
+                  -((double)m_xz[l_vn1 * 2 + 1] - (double)m_xz[l_vn0 * 2 + 1]) /
+                  m_scaleXZ;
+              l_gradNorth = (m_elev[l_vn1] - m_elev[l_vn0]) / l_dNorthM;
+            }
+
+            l_uz = displacement::effectiveVerticalDisplacement(
+                l_uz, l_uEast, l_uNorth, l_gradEast, l_gradNorth);
           }
-          if (l_j1 != l_j0) {
-            double l_dNorthM =
-                -((double)m_xz[l_vn1 * 2 + 1] - (double)m_xz[l_vn0 * 2 + 1]) /
-                m_scaleXZ;
-            l_gradNorth = (m_elev[l_vn1] - m_elev[l_vn0]) / l_dNorthM;
-          }
-
-          l_uz = displacement::effectiveVerticalDisplacement(
-              l_uz, l_uEast, l_uNorth, l_gradEast, l_gradNorth);
         }
-      }
 
-      o_disp[l_v] = (float)l_uz;
-      o_peak = std::max(o_peak, std::abs(o_disp[l_v]));
+        o_disp[l_v] = (float)l_uz;
+        o_rowsPeak = std::max(o_rowsPeak, std::abs(o_disp[l_v]));
+      }
     }
+  };
+
+  const int l_nThreads =
+      std::max(1, std::min(8, (int)std::thread::hardware_concurrency() - 1));
+  if (l_nThreads <= 1 || gridH < 4 * l_nThreads) {
+    l_rows(0, gridH, o_peak);
+    return;
   }
+  std::vector<std::thread> l_pool;
+  std::vector<float> l_peaks((size_t)l_nThreads, 0.0f);
+  for (int t = 0; t < l_nThreads; t++) {
+    const int l_j0 = (int)((long long)t * gridH / l_nThreads);
+    const int l_j1 = (int)((long long)(t + 1) * gridH / l_nThreads);
+    l_pool.emplace_back([&l_rows, &l_peaks, t, l_j0, l_j1]() {
+      l_rows(l_j0, l_j1, l_peaks[t]);
+    });
+  }
+  for (std::thread& l_t : l_pool)
+    l_t.join();
+  for (float l_p : l_peaks)
+    o_peak = std::max(o_peak, l_p);
 }
 
 void RegionView::applyDisplacementField(const std::vector<float>& i_disp,
@@ -445,20 +566,28 @@ void RegionView::beginSimulation(t_idx i_nx, t_idx i_ny, const float* i_bath) {
 
   // LOD index buffers for the sim grid, mirroring the terrain mesh setup.
   m_waterNumLods = 0;
+  m_waterMinLod = -1;
+  constexpr size_t k_maxEboBytes = 256u << 20;
   std::vector<unsigned int> l_idx;
   for (int l_L = 0; l_L < k_maxLod; l_L++) {
     const int l_stride = 1 << l_L;
     if (l_L > 0 && l_stride >= (int)i_nx - 1 && l_stride >= (int)i_ny - 1)
       break;
-    lod::buildIndices((int)i_nx, (int)i_ny, l_stride, l_idx);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_waterEbos[l_L]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 (GLsizeiptr)(l_idx.size() * sizeof(unsigned int)),
-                 l_idx.data(), GL_STATIC_DRAW);
-    m_waterIdxCnts[l_L] = (GLsizei)l_idx.size();
+    m_waterIdxCnts[l_L] = 0;
     m_waterNumLods = l_L + 1;
+    lod::buildIndices((int)i_nx, (int)i_ny, l_stride, l_idx);
+    const size_t l_bytes = l_idx.size() * sizeof(unsigned int);
+    if (l_bytes > k_maxEboBytes)
+      continue;
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_waterEbos[l_L]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)l_bytes, l_idx.data(),
+                 GL_STATIC_DRAW);
+    m_waterIdxCnts[l_L] = (GLsizei)l_idx.size();
+    if (m_waterMinLod < 0)
+      m_waterMinLod = l_L;
   }
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_waterEbos[0]);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
+               m_waterEbos[std::max(m_waterMinLod, 0)]);
 
   glBindVertexArray(0);
   // Seed the colour scale from the earthquake displacement: the open-ocean
@@ -548,18 +677,21 @@ void RegionView::draw(const glm::mat4& i_vp, const glm::vec3& i_camPos) const {
     m_terrShader.setInt("uClip", 1); // land only, writes depth
     lod::drawGridWindowBanded(gridW, gridH, l_i0, l_i1, l_j0, l_j1, m_x0, m_x1,
                               m_z0, m_z1, i_camPos, m_cellWorld, m_numLods,
-                              lodViewportPx, k_lodBands, l_bindTerrLod);
+                              lodViewportPx, k_lodBands, l_bindTerrLod,
+                              std::max(m_minLod, 0));
     m_terrShader.setInt("uClip", 2); // seabed only, colour without depth write
     glDepthMask(GL_FALSE);
     lod::drawGridWindowBanded(gridW, gridH, l_i0, l_i1, l_j0, l_j1, m_x0, m_x1,
                               m_z0, m_z1, i_camPos, m_cellWorld, m_numLods,
-                              lodViewportPx, k_lodBands, l_bindTerrLod);
+                              lodViewportPx, k_lodBands, l_bindTerrLod,
+                              std::max(m_minLod, 0));
     glDepthMask(GL_TRUE);
   } else {
     m_terrShader.setInt("uClip", 0);
     lod::drawGridWindowBanded(gridW, gridH, l_i0, l_i1, l_j0, l_j1, m_x0, m_x1,
                               m_z0, m_z1, i_camPos, m_cellWorld, m_numLods,
-                              lodViewportPx, k_lodBands, l_bindTerrLod);
+                              lodViewportPx, k_lodBands, l_bindTerrLod,
+                              std::max(m_minLod, 0));
   }
   glBindVertexArray(0);
 
@@ -581,9 +713,11 @@ void RegionView::draw(const glm::mat4& i_vp, const glm::vec3& i_camPos) const {
     lod::drawGridWindowBanded(
         (int)m_simNx, (int)m_simNy, l_wi0, l_wi1, l_wj0, l_wj1, m_x0, m_x1,
         m_z0, m_z1, i_camPos, m_waterCellWorld, m_waterNumLods, lodViewportPx,
-        k_lodBands, [&](int i_level) {
+        k_lodBands,
+        [&](int i_level) {
           glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_waterEbos[i_level]);
-        });
+        },
+        std::max(m_waterMinLod, 0));
     glBindVertexArray(0);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
@@ -621,6 +755,21 @@ void RegionView::draw(const glm::mat4& i_vp, const glm::vec3& i_camPos) const {
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
   }
+
+  // Station (gauge) markers: drawn last, depth-tested against the terrain so
+  // a station on the far slope of the terrain is correctly hidden.
+  if (m_stationCount > 0) {
+    m_stationShader.use();
+    m_stationShader.setMat4("uVP", i_vp);
+    glLineWidth(2.0f);
+    m_stationShader.setInt("uCircle", 0);
+    glBindVertexArray(m_stationLineVao);
+    glDrawArrays(GL_LINES, 0, m_stationCount * 2);
+    m_stationShader.setInt("uCircle", 1);
+    glBindVertexArray(m_stationPointVao);
+    glDrawArrays(GL_POINTS, 0, m_stationCount);
+    glBindVertexArray(0);
+  }
 }
 
 RegionView::~RegionView() {
@@ -647,6 +796,14 @@ RegionView::~RegionView() {
     glDeleteBuffers(1, &m_waterVbBath);
     glDeleteBuffers(1, &m_waterVbH);
     glDeleteBuffers(k_maxLod, m_waterEbos);
+  }
+  if (m_stationLineVao) {
+    glDeleteVertexArrays(1, &m_stationLineVao);
+    glDeleteBuffers(1, &m_stationLineVbo);
+  }
+  if (m_stationPointVao) {
+    glDeleteVertexArrays(1, &m_stationPointVao);
+    glDeleteBuffers(1, &m_stationPointVbo);
   }
 }
 

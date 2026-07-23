@@ -1,0 +1,55 @@
+# Reproducible dev environments (replaces the former shell.nix).
+#
+#   docker compose run --rm native      # build solver CLI + run unit tests
+#   docker compose run --rm web-build   # build the wasm/WebGL2 bundle
+#   docker compose run --rm data        # fetch missing datasets, extract web grids
+#   docker compose run --rm frontend    # build the React app into web/dist
+#   docker compose run --rm docs        # build the sphinx documentation
+#   docker compose up serve             # serve web/dist at http://localhost:8080
+#
+# Everything runs against the checked-out tree (bind mount); container builds
+# go to build-docker/ so they never collide with host builds. One-time host
+# setup that shell.nix used to do: git config core.hooksPath .githooks
+
+services:
+  native:
+    build: { context: docker, dockerfile: native.Dockerfile }
+    volumes: [".:/src"]
+    working_dir: /src
+    command: >
+      bash -c "cmake -B build-docker/native -G Ninja
+      && cmake --build build-docker/native
+      && ./build-docker/native/tests"
+
+  web-build:
+    build: { context: docker, dockerfile: web.Dockerfile }
+    volumes: [".:/src"]
+    working_dir: /src
+    command: >
+      bash -c "emcmake cmake -B build-docker/web -G Ninja
+      && cmake --build build-docker/web"
+
+  data:
+    build: { context: docker, dockerfile: tools.Dockerfile }
+    volumes: [".:/src"]
+    working_dir: /src
+    command: python3 tools/make_web_data.py
+
+  docs:
+    build: { context: docker, dockerfile: tools.Dockerfile }
+    volumes: [".:/src"]
+    working_dir: /src
+    command: sphinx-build -b html sphinx/source sphinx/build/html
+
+  frontend:
+    image: node:22-slim
+    volumes: [".:/src"]
+    working_dir: /src/web
+    command: bash -c "npm ci && npm run build"
+
+  serve:
+    image: python:3.12-slim
+    volumes: [".:/src"]
+    working_dir: /src
+    command: python3 web/serve.py 8080
+    ports: ["8080:8080"]

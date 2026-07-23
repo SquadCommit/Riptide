@@ -112,7 +112,7 @@ Run the artificial-tsunami input
        resources/artificial_tsunami_2d/artificialtsunami_bathymetry_1000.nc \
        resources/artificial_tsunami_2d/artificialtsunami_displ_1000.nc
 
-.. figure:: ../../../simulations/visualizations/large_data_io/swimming_pool.webp
+.. figure:: ../_images/simulations/large_data_io/swimming_pool.webp
    :align: center
    :width: 70%
 
@@ -124,7 +124,7 @@ Cross-Check Against the Analytic Setup
 Running the same scenario with the analytic ``ArtificialTsunami2d`` and the
 file-based ``TsunamiEvent2d`` produces visually indistinguishable results.
 
-.. figure:: ../../../simulations/visualizations/large_data_io/compare_artificial_vs_file.webp
+.. figure:: ../_images/simulations/large_data_io/compare_artificial_vs_file.webp
    :align: center
    :width: 100%
 

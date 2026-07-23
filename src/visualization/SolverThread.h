@@ -12,8 +12,10 @@
 #include "../patches/WavePropagation2d/WavePropagation2d.h"
 #include "SimBuffer.h"
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace tsunami_lab {
 namespace visualization {
@@ -60,6 +62,23 @@ public:
   t_idx ny() const { return m_ny; }
   t_real dxy() const { return m_dxy; }
 
+  // Virtual gauges: one time series (sea-surface anomaly eta = h + b) per
+  // cell, sampled once per solver step. Index-order is the caller's contract
+  // to keep in sync with its own station metadata (name/lon/lat) — this
+  // class only knows cell coordinates and recorded values.
+  struct StationPoint {
+    float time;
+    float eta;
+  };
+
+  // Registers a gauge at solver-local cell (i_ix, i_iy); appends to the end
+  // of the station list. Thread-safe — may be called while run() is active.
+  void addStation(t_idx i_ix, t_idx i_iy);
+  void clearStations();
+  size_t stationCount() const;
+  // Copies the recorded series for station i_idx (empty if out of range).
+  std::vector<StationPoint> stationSeries(size_t i_idx) const;
+
 private:
   //! Background loop: setGhost → timeStep → publish, until stop().
   void run();
@@ -84,6 +103,17 @@ private:
   std::atomic<double> m_stepSeconds{0.0};
   //! Simulated seconds elapsed, accumulated once per step (see simTime()).
   std::atomic<double> m_simTimeAccum{0.0};
+
+  // Gauges: recorded once per step in run(), read via stationSeries() from
+  // the caller's thread — guarded by m_stationsMtx on both sides. Capped and
+  // halved (see run()) so a long-running sim can't grow this unboundedly.
+  struct StationRec {
+    t_idx ix, iy;
+    std::vector<StationPoint> samples;
+  };
+  static constexpr size_t k_maxStationSamples = 4000;
+  mutable std::mutex m_stationsMtx;
+  std::vector<StationRec> m_stations;
 };
 
 } // namespace visualization

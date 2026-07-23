@@ -55,3 +55,21 @@ simulations/*
 !simulations/visualizations/**
 
 resources/tsunami_simulations
+
+# macOS
+.DS_Store
+
+# generated web data / build
+web/public/data/
+build-web/
+
+# docker-compose builds
+build-docker/
+
+# frontend
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+
+# Python bytecode
+__pycache__/

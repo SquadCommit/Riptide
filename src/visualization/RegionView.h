@@ -6,7 +6,7 @@
 #include "Lod.h"
 #include "Shader.h"
 #include "displacement/DisplacementModel.h"
-#include <glad/glad.h>
+#include <GLES3/gl3.h>
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -61,6 +61,16 @@ public:
    **/
   void buildSlab2Overlay(const io::Slab2Reader& i_slab2);
 
+  // A virtual gauge marker: a coloured pole from sea level up, rendered at
+  // the station's world (x, z) regardless of vertExaggeration (fixed
+  // height) so it stays visible whatever the terrain relief setting.
+  struct StationMarker {
+    float worldX, worldZ;
+    float r, g, b;
+  };
+  // Replaces the whole marker set (cheap — there are only ever a handful).
+  void setStationMarkers(const std::vector<StationMarker>& i_markers);
+
   void beginSimulation(t_idx i_nx, t_idx i_ny, const float* i_bath);
   void updateWater(const float* i_h);
   void endSimulation() { m_simulating = false; }
@@ -114,6 +124,7 @@ private:
   GLuint m_ebos[k_maxLod] = {};
   GLsizei m_idxCnts[k_maxLod] = {};
   int m_numLods = 0;
+  int m_minLod = 0;         // finest level with a resident index buffer
   float m_cellWorld = 0.0f; // world-unit size of one grid cell
   // World XZ coords of the grid's first/last vertex and the elevation range,
   // for frustum culling of off-screen grid rows/columns in draw().
@@ -144,6 +155,14 @@ private:
 
   float m_scaleY = 1.0f;
 
+  // Station (gauge) markers: a vertical pole per station (GL_LINES) plus a
+  // round cap at its top (GL_POINTS), same shader/program for both.
+  static constexpr float k_stationHeight = 12.0f; // world units above y=0
+  Shader m_stationShader;
+  GLuint m_stationLineVao = 0, m_stationLineVbo = 0;
+  GLuint m_stationPointVao = 0, m_stationPointVbo = 0;
+  int m_stationCount = 0;
+
   Shader m_waterShader;
   GLuint m_waterVao = 0;
   GLuint m_waterVbXZ = 0;
@@ -151,6 +170,7 @@ private:
   GLuint m_waterVbH = 0;
   GLuint m_waterEbos[k_maxLod] = {};
   GLsizei m_waterIdxCnts[k_maxLod] = {};
+  int m_waterMinLod = 0; // finest water level with a resident index buffer
   int m_waterNumLods = 0;
   float m_waterCellWorld = 0.0f;
   t_idx m_simNx = 0;

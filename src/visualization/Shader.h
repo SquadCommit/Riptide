@@ -1,9 +1,9 @@
 #ifndef TSUNAMI_LAB_VISUALIZATION_SHADER_H
 #define TSUNAMI_LAB_VISUALIZATION_SHADER_H
 
+#include <GLES3/gl3.h>
 #include <cstdio>
 #include <fstream>
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <sstream>
 #include <string>
@@ -31,8 +31,13 @@ public:
   }
 
   void build(const char* i_vert, const char* i_frag) {
-    GLuint l_vs = compile(GL_VERTEX_SHADER, i_vert);
-    GLuint l_fs = compile(GL_FRAGMENT_SHADER, i_frag);
+    // The shader sources are written as GLSL 330 core (they predate the web
+    // port); WebGL2 only accepts GLSL ES 300, which is feature-equivalent for
+    // everything used here but requires explicit default precision.
+    const std::string l_vertEs = toGlslEs300(i_vert);
+    const std::string l_fragEs = toGlslEs300(i_frag);
+    GLuint l_vs = compile(GL_VERTEX_SHADER, l_vertEs.c_str());
+    GLuint l_fs = compile(GL_FRAGMENT_SHADER, l_fragEs.c_str());
 
     m_id = glCreateProgram();
     glAttachShader(m_id, l_vs);
@@ -77,6 +82,19 @@ public:
 
 private:
   GLuint m_id = 0;
+
+  static std::string toGlslEs300(const char* i_src) {
+    std::string l_s(i_src);
+    static const std::string k_desktop = "#version 330 core";
+    const size_t l_p = l_s.find(k_desktop);
+    if (l_p != std::string::npos)
+      l_s.replace(l_p, k_desktop.size(),
+                  "#version 300 es\n"
+                  "precision highp float;\n"
+                  "precision highp int;\n"
+                  "precision highp sampler2D;");
+    return l_s;
+  }
 
   GLuint compile(GLenum i_type, const char* i_src) {
     GLuint l_s = glCreateShader(i_type);
