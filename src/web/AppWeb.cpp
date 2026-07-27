@@ -811,7 +811,8 @@ static EM_BOOL onTouchEnd(int, const EmscriptenTouchEvent* i_e, void*) {
     handleTapAt((float)g_tStartX, (float)g_tStartY);
   // End the gesture; a remaining finger recalibrates on its next move.
   g_gestureN = 0;
-  if (i_e->numTouches == 0)
+  // numTouches includes the touch that just ended, so 1 means none remain.
+  if (i_e->numTouches <= 1)
     g_touchOnCanvas = false;
   return EM_TRUE;
 }
