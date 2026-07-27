@@ -72,6 +72,7 @@ static bool g_keyL = false, g_keyR = false, g_keyU = false, g_keyD = false;
 // Touch state (mobile). g_gestureN is the finger count the baselines below are
 // calibrated for; a mismatch in onTouchMove recalibrates instead of applying a
 // jump. One finger drags (rotate/orbit), two fingers pinch-zoom + pan.
+static bool g_touchOnCanvas = false; // gesture actually started on #canvas
 static int g_gestureN = 0;
 static double g_tPrevX = 0, g_tPrevY = 0;   // one-finger previous position
 static double g_tPrevCX = 0, g_tPrevCY = 0; // two-finger centroid
@@ -750,6 +751,7 @@ static void touchResync(const EmscriptenTouchEvent* i_e) {
 }
 
 static EM_BOOL onTouchStart(int, const EmscriptenTouchEvent* i_e, void*) {
+  g_touchOnCanvas = true;
   if (i_e->numTouches == 1) {
     g_tStartX = i_e->touches[0].targetX;
     g_tStartY = i_e->touches[0].targetY;
@@ -798,12 +800,19 @@ static EM_BOOL onTouchMove(int, const EmscriptenTouchEvent* i_e, void*) {
   return EM_TRUE;
 }
 
-static EM_BOOL onTouchEnd(int, const EmscriptenTouchEvent*, void*) {
+static EM_BOOL onTouchEnd(int, const EmscriptenTouchEvent* i_e, void*) {
+  // Only touches that started on the canvas count — otherwise this would
+  // swallow taps on panel buttons too (registered on document so an
+  // off-canvas release still ends the gesture).
+  if (!g_touchOnCanvas)
+    return EM_FALSE;
   // A single-finger gesture that barely moved is a tap.
   if (g_gestureN == 1 && g_tDrag < 8.0f)
     handleTapAt((float)g_tStartX, (float)g_tStartY);
   // End the gesture; a remaining finger recalibrates on its next move.
   g_gestureN = 0;
+  if (i_e->numTouches == 0)
+    g_touchOnCanvas = false;
   return EM_TRUE;
 }
 
