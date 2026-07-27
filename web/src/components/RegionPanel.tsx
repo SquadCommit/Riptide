@@ -44,7 +44,7 @@ export function RegionPanel({
 
   return (
     <Panel
-      className="w-80"
+      className="w-full lg:w-80"
       footer={
         <Button
           variant="ghost"
