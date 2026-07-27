@@ -79,14 +79,11 @@ bool stitchGrids(const std::vector<Grid>& i_tiles, Grid& o_combined) {
   o_combined.elev.assign((size_t)l_w * l_h, (int16_t)-32768); // nodata
 
   for (const Grid& l_t : i_tiles) {
-    const int l_ox =
-        (int)std::lround((l_t.lonMin - l_lonMin) / l_lonStep);
-    const int l_oy =
-        (int)std::lround((l_t.latMin - l_latMin) / l_latStep);
+    const int l_ox = (int)std::lround((l_t.lonMin - l_lonMin) / l_lonStep);
+    const int l_oy = (int)std::lround((l_t.latMin - l_latMin) / l_latStep);
     for (int l_j = 0; l_j < l_t.h; l_j++) {
       const int16_t* l_src = &l_t.elev[(size_t)l_j * l_t.w];
-      int16_t* l_dst =
-          &o_combined.elev[(size_t)(l_oy + l_j) * l_w + l_ox];
+      int16_t* l_dst = &o_combined.elev[(size_t)(l_oy + l_j) * l_w + l_ox];
       std::memcpy(l_dst, l_src, (size_t)l_t.w * sizeof(int16_t));
     }
   }

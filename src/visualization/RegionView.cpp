@@ -88,8 +88,7 @@ void RegionView::init() {
     glGenBuffers(1, &io_vbo);
     glBindVertexArray(io_vao);
     glBindBuffer(GL_ARRAY_BUFFER, io_vbo);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
-                          nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
                           (const void*)(3 * sizeof(float)));
@@ -100,7 +99,8 @@ void RegionView::init() {
   l_initStationVao(m_stationPointVao, m_stationPointVbo);
 }
 
-void RegionView::setStationMarkers(const std::vector<StationMarker>& i_markers) {
+void RegionView::setStationMarkers(
+    const std::vector<StationMarker>& i_markers) {
   m_stationCount = (int)i_markers.size();
   if (m_stationCount == 0)
     return;

@@ -77,7 +77,7 @@ static double g_tPrevX = 0, g_tPrevY = 0;   // one-finger previous position
 static double g_tPrevCX = 0, g_tPrevCY = 0; // two-finger centroid
 static double g_tPrevDist = 0;              // two-finger spread
 static double g_tStartX = 0, g_tStartY = 0; // tap origin
-static float g_tDrag = 0.0f;                // accumulated movement (tap vs drag)
+static float g_tDrag = 0.0f; // accumulated movement (tap vs drag)
 
 // Slab2 subduction geometry (fetched as a pre-converted bundle at boot;
 // null until then -> fallback parameters).
@@ -618,8 +618,8 @@ static void handleTapAt(float i_mx, float i_my) {
   if (g_state == AppState::REGION_SELECT) {
     if (g_slab2 && g_globeView && g_globeView->showSlab2Overlay) {
       float l_lon, l_lat;
-      if (g_globeView->screenToLonLat(i_mx, i_my, g_screenW, g_screenH, g_camera,
-                                      l_lon, l_lat) &&
+      if (g_globeView->screenToLonLat(i_mx, i_my, g_screenW, g_screenH,
+                                      g_camera, l_lon, l_lat) &&
           g_slab2->query(l_lon, l_lat).valid)
         g_globeView->setSelection(
             suggestSlabSelection(l_lon, l_lat, g_globeView->maxSelDeg));
@@ -716,8 +716,8 @@ static EM_BOOL onWheel(int, const EmscriptenWheelEvent* i_e, void*) {
 // rotates the globe / orbits the region view, two fingers pinch-zoom and pan,
 // a tap acts like a click (zone suggestion / epicentre / station).
 
-static void touchCentroid(const EmscriptenTouchEvent* i_e, double& o_cx,
-                          double& o_cy) {
+static void
+touchCentroid(const EmscriptenTouchEvent* i_e, double& o_cx, double& o_cy) {
   int l_n = i_e->numTouches < 2 ? i_e->numTouches : 2;
   o_cx = 0;
   o_cy = 0;
@@ -1011,8 +1011,8 @@ static emscripten::val getHoverInfo(double i_x, double i_y) {
   } else {
     if (!g_regionView || !g_regionView->loaded())
       return o;
-    const glm::vec2 l_w = regionUnproject((float)i_x, (float)i_y, g_screenW,
-                                          g_screenH, g_camera);
+    const glm::vec2 l_w =
+        regionUnproject((float)i_x, (float)i_y, g_screenW, g_screenH, g_camera);
     g_regionView->worldToLonLat(l_w.x, l_w.y, l_lon, l_lat);
     if (l_lon < g_regionView->lonMin || l_lon > g_regionView->lonMax ||
         l_lat < g_regionView->latMin || l_lat > g_regionView->latMax)
@@ -1240,8 +1240,8 @@ static void setStationMarkers(emscripten::val i_markers) {
     float l_wx = 0.0f, l_wz = 0.0f;
     g_regionView->lonLatToWorld(l_m["lon"].as<double>(),
                                 l_m["lat"].as<double>(), l_wx, l_wz);
-    l_markers.push_back({l_wx, l_wz, l_m["r"].as<float>(),
-                         l_m["g"].as<float>(), l_m["b"].as<float>()});
+    l_markers.push_back({l_wx, l_wz, l_m["r"].as<float>(), l_m["g"].as<float>(),
+                         l_m["b"].as<float>()});
   }
   g_regionView->setStationMarkers(l_markers);
 }

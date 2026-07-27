@@ -176,8 +176,8 @@ void GlobeView::buildSlab2Overlay(const io::Slab2Reader& i_slab2) {
   glEnableVertexAttribArray(0);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_slabEbo);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-               (GLsizeiptr)(l_idx.size() * sizeof(unsigned int)),
-               l_idx.data(), GL_STATIC_DRAW);
+               (GLsizeiptr)(l_idx.size() * sizeof(unsigned int)), l_idx.data(),
+               GL_STATIC_DRAW);
   m_slabIdxCnt = (GLsizei)l_idx.size();
   glBindVertexArray(0);
 
@@ -350,10 +350,9 @@ void GlobeView::draw(const glm::mat4& i_vp) const {
     // so a LOD floor bounds the worst case (kMinLod=2 -> at most ~4.7 M
     // triangles for the default 8640-sample grid) regardless of zoom.
     constexpr int kMinLod = 2;
-    const int l_lod = std::max(
-        {m_terrMinLod, kMinLod,
-         lod::pickLevel(m_cellWorld, m_terrNumLods, lodCamDistance,
-                        lodViewportPx)});
+    const int l_lod = std::max({m_terrMinLod, kMinLod,
+                                lod::pickLevel(m_cellWorld, m_terrNumLods,
+                                               lodCamDistance, lodViewportPx)});
     m_terrShader.use();
     m_terrShader.setMat4("uVP", i_vp);
     m_terrShader.setFloat("uRadius", RADIUS);
@@ -421,8 +420,7 @@ void GlobeView::uploadSelectionRect() const {
   // fixed index topology this fills).
   std::vector<float> verts((size_t)kSelGridN * kSelGridN * 2);
   for (int j = 0; j < kSelGridN; j++) {
-    const float lat =
-        latMin + (latMax - latMin) * (float)j / (float)kSelSubdiv;
+    const float lat = latMin + (latMax - latMin) * (float)j / (float)kSelSubdiv;
     for (int i = 0; i < kSelGridN; i++) {
       const float lon =
           lonMin + (lonMax - lonMin) * (float)i / (float)kSelSubdiv;
@@ -471,7 +469,8 @@ bool GlobeView::screenToLonLat(float i_mx,
     return false; // sphere is behind the ray origin
 
   const glm::vec3 hit = orig + t * dir;
-  o_lat = glm::degrees(std::asin(std::max(-1.0f, std::min(1.0f, hit.y / RADIUS))));
+  o_lat =
+      glm::degrees(std::asin(std::max(-1.0f, std::min(1.0f, hit.y / RADIUS))));
   o_lon = glm::degrees(std::atan2(hit.x, hit.z));
   return true;
 }
