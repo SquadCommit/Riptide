@@ -1,8 +1,9 @@
 ##
 # Deploys the web app to GitHub Pages. Fully static hosting: the committed
 # wasm bundle (web/public/wasm), the extracted data grids (cached — on a
-# miss the runner downloads GEBCO/Slab2 and regenerates them) and the React
-# build. COOP/COEP isolation comes from coi-serviceworker at runtime, since
+# miss the runner downloads GEBCO/Slab2 and regenerates them), the React
+# build and the Sphinx docs (mounted under /docs, linked from the TopBar).
+# COOP/COEP isolation comes from coi-serviceworker at runtime, since
 # Pages cannot send custom headers.
 #
 # One-time repo setup: Settings -> Pages -> Source = "GitHub Actions".
@@ -66,6 +67,12 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      - name: Build Sphinx docs
+        run: |
+          pip install sphinx sphinx-rtd-theme
+          sphinx-build -b html sphinx/source sphinx/build/html
+          cp -r sphinx/build/html web/dist/docs
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

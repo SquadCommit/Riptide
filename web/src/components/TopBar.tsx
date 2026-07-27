@@ -1,4 +1,4 @@
-import { ChevronRight, Waves } from "lucide-react";
+import { BookOpen, ChevronRight, Waves } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { AppSnapshot } from "@/lib/tsunami";
@@ -43,6 +43,16 @@ export function TopBar({ snapshot }: { snapshot: AppSnapshot }) {
             </Badge>
           </>
         )}
+        <div className="mx-1 h-4 w-px bg-border" />
+        <a
+          href={`${import.meta.env.BASE_URL}docs/`}
+          target="_blank"
+          rel="noreferrer"
+          title="Dokumentation"
+          className="pointer-events-auto text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <BookOpen className="h-4 w-4" />
+        </a>
       </div>
     </div>
   );
