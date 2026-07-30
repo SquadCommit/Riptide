@@ -59,6 +59,9 @@ resources/tsunami_simulations
 # macOS
 .DS_Store
 
+# Claude Code local config
+.claude/
+
 # generated web data / build
 web/public/data/
 build-web/
