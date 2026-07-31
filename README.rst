@@ -8,9 +8,10 @@ React. Pick a subduction zone on the world map, place an earthquake with
 real USGS-Slab2 fault geometry, and watch the wave propagate live over
 GEBCO bathymetry.
 
-- Repository: https://github.com/ykoellmann/tsunami_lab
-- User documentation: https://ykoellmann.github.io/tsunami_lab/
-- Code documentation: https://ykoellmann.github.io/tsunami_lab/doxygen/
+- Web UI: https://squadcommit.github.io/Riptide/
+- Repository: https://github.com/SquadCommit/Riptide.git
+- User documentation: https://squadcommit.github.io/Riptide/docs
+- Code documentation: https://squadcommit.github.io/Riptide/doxygen/
 
 .. contents:: What do you want to do?
    :local:
