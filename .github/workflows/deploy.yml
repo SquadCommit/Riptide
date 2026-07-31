@@ -74,6 +74,13 @@ jobs:
           sphinx-build -b html sphinx/source sphinx/build/html
           cp -r sphinx/build/html web/dist/docs
 
+      - name: Build Doxygen docs
+        run: |
+          sudo apt-get install doxygen
+          cd docs
+          doxygen Doxyfile
+          cp -r docs/html web/dist/doxygen
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
