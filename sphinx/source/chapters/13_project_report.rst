@@ -261,10 +261,13 @@ conventions, angle definitions and singularity handling all invite mistakes
 that produce fields which look right and are quantitatively wrong, and a
 self-consistency test would not catch that.
 
-The implementation was therefore cross-checked against
+The MATLAB routine
 `okada85.m <https://github.com/IPGP/deformation-lib/blob/master/okada/okada85.m>`__
-from the IPGP ``deformation-lib`` package, the widely used MATLAB reference
-implementation, run unmodified in Octave 11.3.0:
+from the IPGP ``deformation-lib`` package (François Beauducel, BSD 2-Clause)
+was therefore used as the reference throughout: the C++ code follows its
+coordinate conventions and its decomposition into corner functions rather than
+deriving them from the papers independently. The same routine then served as
+the numerical check, run unmodified in Octave 11.3.0:
 
 * 81 configurations were compared: 9 fault parameter sets times 9 query points,
   spanning thrust, normal, oblique and pure strike-slip rakes, dips from 10° to
@@ -441,7 +444,7 @@ Wells & Coppersmith (1994)           Fallback scaling outside Slab2 coverage    
 Strasser, Arango & Bommer (2010)     Interface rupture length and width                `SRL 81(6), 941-950 <https://doi.org/10.1785/gssrl.81.6.941>`__
 Tanioka & Satake (1996)              Sloping-seafloor correction                       `GRL 23(8), 861-864 <https://doi.org/10.1029/96GL00736>`__
 Hayes et al. (2018), Slab2           Interface depth/strike/dip; validity mask         `Science 362, 58-61 <https://doi.org/10.1126/science.aat4723>`__
-IPGP ``okada85.m``                   Numerical reference for validation                `deformation-lib <https://github.com/IPGP/deformation-lib>`__
+IPGP ``okada85.m``                   Implementation reference and validation           `deformation-lib <https://github.com/IPGP/deformation-lib>`__
 GEBCO 2026 grid                      Global bathymetry (15 arc-second)                 BODC/CEDA
 USGS Slab2 grid distribution         Slab2 raster data                                 USGS ScienceBase
 ===================================  ================================================  ===============================================
