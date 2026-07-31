@@ -37,7 +37,7 @@ Code Documentation
 
 The source code documentation is generated using Doxygen and hosted online:
 
-- `Doxygen Documentation <https://ykoellmann.github.io/tsunami_lab/doxygen/>`_
+- `Doxygen Documentation <https://squadcommit.github.io/Riptide/doxygen/>`_
 
 Build Process
 =============
