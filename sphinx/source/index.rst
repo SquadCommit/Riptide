@@ -25,6 +25,13 @@ Documentation and reports for the Tsunami Lab at Friedrich Schiller University J
    chapters/12_individual_week3
    chapters/13_project_report
 
+Live Application
+================
+
+The interactive browser version is deployed from ``main`` to GitHub Pages:
+
+- `Live application <https://squadcommit.github.io/Riptide/>`_
+
 Code Documentation
 ==================
 
@@ -35,24 +42,40 @@ The source code documentation is generated using Doxygen and hosted online:
 Build Process
 =============
 
-The project uses `SCons <https://scons.org/>`_ as its build tool and
-`Nix <https://nixos.org/>`_ to provide a reproducible development environment.
+The project builds with `CMake <https://cmake.org/>`_. Third-party
+dependencies (Catch2, pugixml, glm) are downloaded at configure time via
+``FetchContent``, so a fresh clone needs no submodules. ``docker-compose.yml``
+provides reproducible environments for every build step.
 
-**Setup (first time):**
-
-.. code-block:: bash
-
-   curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
-
-Then restart your terminal.
-
-**Local build:**
+**Web app (Docker).** Four steps, in this order, since each consumes the
+artifacts of the previous one:
 
 .. code-block:: bash
 
-   nix-shell
-   scons mode=debug
-   ./build/tests
+   docker compose run --rm web-build   # C++ -> wasm     -> web/public/wasm/
+   docker compose run --rm data        # GEBCO/Slab2     -> web/public/data/
+   docker compose run --rm frontend    # React build     -> web/dist/
+   docker compose up serve             # http://localhost:8080
+
+**Native solver and unit tests:**
+
+.. code-block:: bash
+
+   cmake -B build && cmake --build build -j
+   ./build/tests            # unit tests
+   ./build/tsunami_lab      # batch solver
+
+**Wasm build without Docker** (needs the Emscripten SDK, verified with 6.0.2):
+
+.. code-block:: bash
+
+   emcmake cmake -B build-web && cmake --build build-web -j
+
+**Documentation:**
+
+.. code-block:: bash
+
+   docker compose run --rm docs        # sphinx -> sphinx/build/html
 
 **Style check:**
 
@@ -70,4 +93,5 @@ To fix style violations automatically:
 
 Every push and pull request to ``main`` triggers the GitHub Actions pipeline, which runs
 style checking (clang-format), static analysis (cppcheck), unit tests, sanitizer builds,
-and Valgrind memory checks.
+and Valgrind memory checks. A second workflow deploys the web app and these docs to
+GitHub Pages on every push to ``main``.
