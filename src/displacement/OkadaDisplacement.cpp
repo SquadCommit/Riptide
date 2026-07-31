@@ -4,6 +4,19 @@
  * @section DESCRIPTION
  * Vertical co-seismic seafloor displacement of a rectangular fault in an
  * elastic half-space, after Okada (1992).
+ *
+ * @section ATTRIBUTION
+ * Ported from okada85.m (IPGP deformation-lib); the coordinate conventions,
+ * the corner-function decomposition and the cos(dip) -> 0 limits follow that
+ * implementation.
+ *
+ * Copyright (c) 1997-2025, François Beauducel <beauducel@ipgp.fr>
+ * Covered by the BSD 2-Clause License. Redistributions of source code must
+ * retain the above copyright notice, this list of conditions and the following
+ * disclaimer. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+ * NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED.
  **/
 #include "OkadaDisplacement.h"
 
